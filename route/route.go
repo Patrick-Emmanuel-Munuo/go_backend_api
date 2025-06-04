@@ -10,54 +10,44 @@ import (
 func SetupRouter(router *gin.Engine) {
 	// Connect to your database here
 	// db := models.ConnectDatabase()
-	Routes := router.Group("/api")
+	routes := router.Group("/api")
 	{
 		// Base route for testing if the server is running
-		Routes.GET("/", func(c *gin.Context) {
+		routes.GET("/", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
 				"success": true,
 				"message": "Backend MySQL API application router is working",
 			})
 		})
-
-		// Generate OTP route
-		Routes.GET("/generate-otp", func(c *gin.Context) {
-			otp := controllers.GenerateOTP() // Generate OTP
-			if otp == "" {
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"success": false,
-					"message": "Failed to generate OTP",
-				})
+		// This route generates a one-time password (OTP) for testing purposes
+		routes.GET("/generate-otp", func(c *gin.Context) {
+			result := controllers.GenerateOTP()
+			if success, ok := result["success"].(bool); ok && success {
+				c.JSON(http.StatusOK, result)
 			} else {
-				c.JSON(http.StatusOK, gin.H{
-					"success": true,
-					"message": otp,
-				})
+				c.JSON(http.StatusInternalServerError, result)
 			}
 		})
 	}
 
 	// Example of MySQL routes (commented for now)
-	// mysql := router.Group("/api/mysql")
-	// {
-	// 	mysql.POST("/read", ReadData)         // Your controller logic here
-	// 	mysql.POST("/bulk-read", BulkReadData)
-	// 	mysql.POST("/list", ListData)
-	// 	mysql.GET("/list-all", ListAllData)
-	// 	mysql.POST("/create", CreateData)
-	// 	mysql.POST("/bulk-create", BulkCreateData)
-	// 	mysql.POST("/update", UpdateData)
-	// 	mysql.POST("/bulk-update", BulkUpdateData)
-	// 	mysql.POST("/delete", DeleteData)
-	// 	mysql.POST("/bulk-delete", BulkDeleteData)
-	// 	mysql.POST("/authentication", Authentication)
-	// 	mysql.POST("/count", CountRecords)
-	// 	mysql.POST("/search", SearchData)
-	// 	mysql.GET("/backup", BackupDatabase)
-	// 	mysql.POST("/create-database", CreateDatabase)
-	// 	mysql.POST("/delete-database", DeleteDatabase)
-	// 	mysql.POST("/create-table", CreateTable)
-	// 	mysql.POST("/delete-table", DeleteTable)
-	// 	mysql.POST("/update-table", UpdateTable)
-	// }
+	mysql := router.Group("/api/mysql")
+	{
+		mysql.GET("/backup", func(c *gin.Context) {
+			backup, err := controllers.Backup()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"success": false,
+					"message": err.Error(),
+				})
+				return
+			}
+			c.JSON(http.StatusOK, backup)
+		})
+		//mysql.POST("/read", )
+		//mysql.POST("/list", ListData)
+		//mysql.POST("/create", CreateData)
+		//mysql.POST("/update", UpdateData)
+
+	}
 }

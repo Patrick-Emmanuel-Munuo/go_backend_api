@@ -4,9 +4,15 @@
 This is a basic Go (Golang) application built with the **Gin** web framework. It serves as a backend API template for building and deploying services. It supports simple CRUD operations and serves as a foundation for further extensions.
 
 ---
-### Rungo in nodemon
+### Rungo in fresh
+ or nodemon
 npm install -g nodemon
 nodemon --exec go run main.go --signal SIGTERM
+
+in fresh
+fresh
+
+
 
  Response
 
