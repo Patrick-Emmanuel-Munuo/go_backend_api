@@ -2,47 +2,51 @@ package main
 
 import (
 	"fmt"
-	"runtime"
+	"log"
 	"os"
 	"os/exec"
-	"log"
-	"time"
+	"runtime"
 	"syscall"
+	"time"
 )
 
 func main() {
-	// Get the number of CPUs available
 	numCPUs := runtime.NumCPU()
-	fmt.Printf("Number of CPUs is %d at pid = %d\n", numCPUs, os.Getpid())
+	fmt.Printf("Master PID %d: Starting %d workers\n", os.Getpid(), numCPUs)
 
-	// Start a new goroutine for each CPU
 	for i := 0; i < numCPUs; i++ {
 		go startWorker(i)
 	}
 
-	// Keep the main process alive to manage the workers
 	select {}
 }
 
 func startWorker(id int) {
-	// Simulate a worker's task
-	fmt.Printf("Worker %d started, pid = %d\n", id, os.Getpid())
+	for {
+		fmt.Printf("Starting worker %d\n", id)
+		cmd := exec.Command("./vartrick-server") // Run the built binary directly
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-	// Simulating some work by sleeping
-	time.Sleep(time.Second * 5)
+		err := cmd.Start()
+		if err != nil {
+			log.Printf("Failed to start worker %d: %v\n", id, err)
+			time.Sleep(time.Second)
+			continue
+		}
 
-	// If the worker exits (simulated), restart it
-	fmt.Printf("Worker %d (pid = %d) is exiting\n", id, os.Getpid())
-	restartWorker(id)
-}
+		pid := cmd.Process.Pid
+		fmt.Printf("Worker %d started with PID %d\n", id, pid)
 
-func restartWorker(id int) {
-	// Simulate restarting a worker (you can use exec.Command to run a new process if needed)
-	fmt.Printf("Starting another worker for ID %d\n", id)
-	cmd := exec.Command(os.Args[0]) // Run the same Go program again
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // Keep the new process in the same process group
-	if err := cmd.Start(); err != nil {
-		log.Fatal("Failed to restart worker:", err)
+		err = cmd.Wait()
+		if err != nil {
+			log.Printf("Worker %d (PID %d) exited with error: %v\n", id, pid, err)
+		} else {
+			fmt.Printf("Worker %d (PID %d) exited normally\n", id, pid)
+		}
+
+		fmt.Printf("Restarting worker %d after 1 second...\n", id)
+		time.Sleep(time.Second)
 	}
-	cmd.Wait()
 }
