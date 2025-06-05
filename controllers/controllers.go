@@ -419,8 +419,7 @@ func List(c *gin.Context) {
 // ListAll returns all records from a table
 func ListAll(c *gin.Context) {
 	var options struct {
-		Table     string                 `json:"table"`
-		Condition map[string]interface{} `json:"condition"` // Optional conditions
+		Table string `json:"table"`
 	}
 	if err := c.ShouldBindJSON(&options); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid request format"})
@@ -430,9 +429,8 @@ func ListAll(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Table name is required"})
 		return
 	}
-	whereClause, params := helpers.Where(options.Condition)
-	query := fmt.Sprintf("SELECT * FROM %s WHERE %s", options.Table, whereClause)
-	rows, err := db.Query(query, params...)
+	query := fmt.Sprintf("SELECT * FROM %s", options.Table)
+	rows, err := db.Query(query)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": err.Error()})
 		return
