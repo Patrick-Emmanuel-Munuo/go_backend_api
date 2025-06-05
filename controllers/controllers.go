@@ -127,12 +127,10 @@ func Read(c *gin.Context) {
 		})
 		return
 	}
-
 	selectFields := "*"
 	if len(options.Select) > 0 {
 		selectFields = helpers.JoinFields(options.Select)
 	}
-
 	whereClause := ""
 	if len(options.Condition) > 0 && len(options.OrCondition) > 0 {
 		whereClause = fmt.Sprintf("( %s ) AND ( %s )",
@@ -143,7 +141,6 @@ func Read(c *gin.Context) {
 	} else if len(options.OrCondition) > 0 {
 		whereClause = helpers.WhereOr(options.OrCondition)
 	}
-
 	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s", selectFields, options.Table, whereClause)
 	rows, err := db.Query(query)
 	if err != nil {
@@ -154,7 +151,6 @@ func Read(c *gin.Context) {
 		return
 	}
 	defer rows.Close()
-
 	columns, err := rows.Columns()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -163,16 +159,13 @@ func Read(c *gin.Context) {
 		})
 		return
 	}
-
 	var results []map[string]interface{}
 	for rows.Next() {
 		columnValues := make([]interface{}, len(columns))
 		columnPointers := make([]interface{}, len(columns))
-
 		for i := range columnValues {
 			columnPointers[i] = &columnValues[i]
 		}
-
 		if err := rows.Scan(columnPointers...); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
@@ -180,7 +173,6 @@ func Read(c *gin.Context) {
 			})
 			return
 		}
-
 		rowMap := make(map[string]interface{})
 		for i, col := range columns {
 			val := columnPointers[i].(*interface{})
@@ -188,7 +180,6 @@ func Read(c *gin.Context) {
 		}
 		results = append(results, rowMap)
 	}
-
 	for i, row := range results {
 		newRow := make(map[string]interface{})
 		for k, v := range row {
@@ -200,7 +191,6 @@ func Read(c *gin.Context) {
 		}
 		results[i] = newRow
 	}
-
 	if len(results) == 0 {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
@@ -208,7 +198,100 @@ func Read(c *gin.Context) {
 		})
 		return
 	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": results,
+	})
+}
 
+// search mysql
+func Search(c *gin.Context) {
+	var options Options
+	if err := c.ShouldBindJSON(&options); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "Invalid request format",
+		})
+		return
+	}
+	if options.Table == "" || (len(options.Condition) == 0 && len(options.OrCondition) == 0) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "Missing table name or condition(s)",
+		})
+		return
+	}
+	selectFields := "*"
+	if len(options.Select) > 0 {
+		selectFields = helpers.JoinFields(options.Select)
+	}
+	whereClause := ""
+	if len(options.Condition) > 0 && len(options.OrCondition) > 0 {
+		whereClause = fmt.Sprintf("( %s ) AND ( %s )",
+			helpers.Where(options.Condition),
+			helpers.WhereOr(options.OrCondition))
+	} else if len(options.Condition) > 0 {
+		whereClause = helpers.Where(options.Condition)
+	} else if len(options.OrCondition) > 0 {
+		whereClause = helpers.WhereOr(options.OrCondition)
+	}
+	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s", selectFields, options.Table, whereClause)
+	rows, err := db.Query(query)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+	defer rows.Close()
+	columns, err := rows.Columns()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+	var results []map[string]interface{}
+	for rows.Next() {
+		columnValues := make([]interface{}, len(columns))
+		columnPointers := make([]interface{}, len(columns))
+		for i := range columnValues {
+			columnPointers[i] = &columnValues[i]
+		}
+		if err := rows.Scan(columnPointers...); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return
+		}
+		rowMap := make(map[string]interface{})
+		for i, col := range columns {
+			val := columnPointers[i].(*interface{})
+			rowMap[col] = *val
+		}
+		results = append(results, rowMap)
+	}
+	for i, row := range results {
+		newRow := make(map[string]interface{})
+		for k, v := range row {
+			if byteVal, ok := v.([]uint8); ok {
+				newRow[k] = string(byteVal)
+			} else {
+				newRow[k] = v
+			}
+		}
+		results[i] = newRow
+	}
+	if len(results) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "No data found",
+		})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": results,
