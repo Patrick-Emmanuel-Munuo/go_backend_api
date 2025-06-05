@@ -7,10 +7,7 @@ This is a basic Go (Golang) application built with the **Gin** web framework. It
 ### Rungo in fresh
  or nodemon
 npm install -g nodemon
-nodemon --exec go run main.go --signal SIGTERM
-
-in fresh
-fresh
+nodemon --exec go run main.go
 
 
 

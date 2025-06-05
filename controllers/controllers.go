@@ -6,13 +6,28 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
+	"vartrick-server/helpers"
+
+	"github.com/gin-gonic/gin"
 )
 
-var db *sql.DB
+//var db *sql.DB
+
+type Options struct {
+	Table       string                 `json:"table"`
+	Select      []string               `json:"select"`
+	Condition   map[string]interface{} `json:"condition"`
+	OrCondition map[string]interface{} `json:"or_condition"`
+}
+type ReadResult struct {
+	Success bool        `json:"success"`
+	Message interface{} `json:"message"`
+}
 
 // Generate OTP
 func GenerateOTP() map[string]interface{} {
@@ -95,87 +110,107 @@ func Backup() (map[string]interface{}, error) {
 	}, nil
 }
 
-/*// Read fetches data from the DB with optional conditions.
-func Read(ctx context.Context, options map[string]interface{}) (map[string]interface{}, error) {
-	table, ok := options["table"].(string)
-	if !ok || table == "" {
-		return map[string]interface{}{"success": false, "message": "Table name is required"}, nil
+// read mysql
+func Read(c *gin.Context) {
+	var options Options
+	if err := c.ShouldBindJSON(&options); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "Invalid request format",
+		})
+		return
 	}
-
-	condition, _ := options["condition"].(map[string]interface{})
-	orCondition, _ := options["or_condition"].(map[string]interface{})
-	selectFieldsMap, _ := options["select"].(map[string]interface{})
-
-	if len(condition) == 0 && len(orCondition) == 0 {
-		return map[string]interface{}{"success": false, "message": "At least one of 'condition' or 'or_condition' is required"}, nil
+	if options.Table == "" || (len(options.Condition) == 0 && len(options.OrCondition) == 0) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "Missing table name or condition(s)",
+		})
+		return
 	}
 
 	selectFields := "*"
-	if len(selectFieldsMap) > 0 {
-		fields := make([]string, 0, len(selectFieldsMap))
-		for k := range selectFieldsMap {
-			fields = append(fields, k)
-		}
-		selectFields = ""
-		for i, f := range fields {
-			if i > 0 {
-				selectFields += ", "
-			}
-			selectFields += f
-		}
+	if len(options.Select) > 0 {
+		selectFields = helpers.JoinFields(options.Select)
 	}
 
-	var whereClause string
-	hasCondition := len(condition) > 0
-	hasOrCondition := len(orCondition) > 0
-
-	if hasCondition && hasOrCondition {
-		whereClause = fmt.Sprintf("( %s ) AND ( %s )", helpers.Where(condition), helpers.WhereOr(orCondition))
-	} else if hasCondition {
-		whereClause = helpers.Where(condition)
-	} else if hasOrCondition {
-		whereClause = helpers.WhereOr(orCondition)
+	whereClause := ""
+	if len(options.Condition) > 0 && len(options.OrCondition) > 0 {
+		whereClause = fmt.Sprintf("( %s ) AND ( %s )",
+			helpers.Where(options.Condition),
+			helpers.WhereOr(options.OrCondition))
+	} else if len(options.Condition) > 0 {
+		whereClause = helpers.Where(options.Condition)
+	} else if len(options.OrCondition) > 0 {
+		whereClause = helpers.WhereOr(options.OrCondition)
 	}
 
-	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s", selectFields, table, whereClause)
-
-	rows, err := db.QueryContext(ctx, query)
+	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s", selectFields, options.Table, whereClause)
+	rows, err := db.Query(query)
 	if err != nil {
-		log.Println("Query error:", err)
-		return map[string]interface{}{"success": false, "message": err.Error()}, nil
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
 	}
 	defer rows.Close()
 
 	columns, err := rows.Columns()
 	if err != nil {
-		log.Println("Failed to get columns:", err)
-		return map[string]interface{}{"success": false, "message": err.Error()}, nil
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
 	}
 
-	results := []map[string]interface{}{}
-
+	var results []map[string]interface{}
 	for rows.Next() {
-		cols := make([]interface{}, len(columns))
-		colPointers := make([]interface{}, len(columns))
-		for i := range cols {
-			colPointers[i] = &cols[i]
+		columnValues := make([]interface{}, len(columns))
+		columnPointers := make([]interface{}, len(columns))
+
+		for i := range columnValues {
+			columnPointers[i] = &columnValues[i]
 		}
 
-		if err := rows.Scan(colPointers...); err != nil {
-			log.Println("Row scan failed:", err)
-			return map[string]interface{}{"success": false, "message": err.Error()}, nil
+		if err := rows.Scan(columnPointers...); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return
 		}
 
-		rowMap := map[string]interface{}{}
-		for i, colName := range columns {
-			val := colPointers[i].(*interface{})
-			rowMap[colName] = *val
+		rowMap := make(map[string]interface{})
+		for i, col := range columns {
+			val := columnPointers[i].(*interface{})
+			rowMap[col] = *val
 		}
 		results = append(results, rowMap)
 	}
 
-	if len(results) == 0 {
-		return map[string]interface{}{"success": false, "message": "not found data"}, nil
+	for i, row := range results {
+		newRow := make(map[string]interface{})
+		for k, v := range row {
+			if byteVal, ok := v.([]uint8); ok {
+				newRow[k] = string(byteVal)
+			} else {
+				newRow[k] = v
+			}
+		}
+		results[i] = newRow
 	}
-	return map[string]interface{}{"success": true, "message": results}, nil
-}*/
+
+	if len(results) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "No data found",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": results,
+	})
+}

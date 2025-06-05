@@ -44,8 +44,18 @@ func SetupRouter(router *gin.Engine) {
 			}
 			c.JSON(http.StatusOK, backup)
 		})
-		//mysql.POST("/read", )
-		//mysql.POST("/list", ListData)
+		/*mysql.GET("/read", func(c *gin.Context) {
+			read, err := controllers.Read()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"success": false,
+					"message": err.Error(),
+				})
+				return
+			}
+			c.JSON(http.StatusOK, read)
+		})*/
+		mysql.POST("/read", controllers.Read)
 		//mysql.POST("/create", CreateData)
 		//mysql.POST("/update", UpdateData)
 

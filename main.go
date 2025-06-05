@@ -7,7 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"vartrick-server/helpers"
+	"vartrick-server/controllers"
 	"vartrick-server/route"
 
 	"github.com/gin-gonic/gin"
@@ -50,12 +50,15 @@ func main() {
 	router := gin.Default()
 
 	// Initialize and check the DB connection with JSON logging
+	// Initialize DB connection
 	if err := InitDBConnection(); err != nil {
 		log.Printf(`{"success": false, "message": "Failed to connect to MySQL", "error": "%v"}`, err)
 		os.Exit(1)
 	} else {
 		log.Printf(`{"success": true, "message": "Connected to MySQL successfully"}`)
 	}
+	// Inject DB into controller package
+	controllers.SetDB(db)
 	// Basic welcome route
 	router.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -64,7 +67,6 @@ func main() {
 		})
 	})
 	// Use POST for Read because you expect JSON body
-	router.POST("/read", Read)
 	// Load app routes
 	route.SetupRouter(router)
 	// Handle 404
@@ -106,109 +108,4 @@ func InitDBConnection() error {
 	}
 
 	return nil
-}
-
-func Read(c *gin.Context) {
-	//test options Options
-	// Hardcoded test input
-	/*options := Options{
-		Table:  "users",
-		Select: []string{"id", "name", "email"},
-		Condition: map[string]interface{}{
-			"status": "active",
-		},
-		OrCondition: map[string]interface{}{
-			"role": "admin",
-		},
-	}*/
-
-	// Bind JSON input to Options struct
-	var options Options
-
-	if err := c.ShouldBindJSON(&options); err != nil {
-		c.JSON(http.StatusBadRequest, ReadResult{Success: false, Message: "Invalid request format"})
-		return
-	}
-
-	if options.Table == "" || (len(options.Condition) == 0 && len(options.OrCondition) == 0) {
-		c.JSON(http.StatusBadRequest, ReadResult{Success: false, Message: "Missing table name or condition(s)"})
-		return
-	}
-
-	selectFields := "*"
-	if len(options.Select) > 0 {
-		selectFields = helpers.JoinFields(options.Select)
-	} else {
-		selectFields = "*"
-	}
-
-	whereClause := ""
-	if len(options.Condition) > 0 && len(options.OrCondition) > 0 {
-		whereClause = fmt.Sprintf("( %s ) AND ( %s )",
-			helpers.Where(options.Condition),
-			helpers.WhereOr(options.OrCondition))
-	} else if len(options.Condition) > 0 {
-		whereClause = helpers.Where(options.Condition)
-	} else if len(options.OrCondition) > 0 {
-		whereClause = helpers.WhereOr(options.OrCondition)
-	}
-	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s", selectFields, options.Table, whereClause)
-	rows, err := db.Query(query)
-	//fmt.Println("queery : ", query)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, ReadResult{Success: false, Message: err.Error()})
-		return
-	}
-	defer rows.Close()
-	columns, err := rows.Columns()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, ReadResult{Success: false, Message: err.Error()})
-		return
-	}
-	var results []map[string]interface{}
-
-	for rows.Next() {
-		columnValues := make([]interface{}, len(columns))
-		columnPointers := make([]interface{}, len(columns))
-
-		for i := range columnValues {
-			columnPointers[i] = &columnValues[i]
-		}
-
-		if err := rows.Scan(columnPointers...); err != nil {
-			c.JSON(http.StatusInternalServerError, ReadResult{Success: false, Message: err.Error()})
-			return
-		}
-
-		rowMap := make(map[string]interface{})
-		for i, col := range columns {
-			val := columnPointers[i].(*interface{})
-			rowMap[col] = *val
-		}
-
-		results = append(results, rowMap)
-	}
-	// Convert []uint8 to string
-	for i, row := range results {
-		newRow := make(map[string]interface{})
-		for k, v := range row {
-			if byteVal, ok := v.([]uint8); ok {
-				newRow[k] = string(byteVal)
-			} else {
-				newRow[k] = v
-			}
-		}
-		results[i] = newRow
-	}
-	if len(results) == 0 {
-		c.JSON(http.StatusOK, ReadResult{
-			Success: false,
-			Message: "No data found",
-		})
-		return
-	}
-	c.JSON(http.StatusOK, ReadResult{
-		Success: true,
-		Message: results,
-	})
 }
