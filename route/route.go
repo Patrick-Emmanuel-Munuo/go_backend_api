@@ -46,8 +46,20 @@ func SetupRouter(router *gin.Engine) {
 		})
 		mysql.POST("/read", controllers.Read)
 		mysql.POST("/search", controllers.Search)
-		//mysql.POST("/create", CreateData)
-		//mysql.POST("/update", UpdateData)
+		mysql.POST("/create", controllers.Create)
+		//mysql.POST("/delete", controllers.Delete) // Uncomment if you want to enable delete functionality
+		mysql.POST("/update", controllers.Update)
+		// New pagination / listing routes
+		mysql.POST("/list", controllers.List)
+		mysql.POST("/list-all", controllers.ListAll)
 
+		// New bulk operation routes
+		mysql.POST("/create-bulk", controllers.CreateBulk)
+		mysql.POST("/update-bulk", controllers.UpdateBulk)
+
+		// Other utility routes
+		mysql.POST("/count", controllers.Count)
+		mysql.POST("/query", controllers.Query)
+		mysql.POST("/search-between", controllers.SearchBetween)
 	}
 }
