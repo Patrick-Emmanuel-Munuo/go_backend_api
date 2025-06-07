@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"crypto/rand"
-	"database/sql"
 	"fmt"
 	"log"
 	"math/big"
@@ -12,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"vartrick-server/configurations"
 	"vartrick-server/helpers"
 
 	"github.com/gin-gonic/gin"
@@ -28,6 +28,40 @@ type Options struct {
 type ReadResult struct {
 	Success bool        `json:"success"`
 	Message interface{} `json:"message"`
+}
+type SMSOptions struct {
+	To      []string
+	Message string
+}
+
+type SMSRecipient struct {
+	PhoneNumber  string `json:"phoneNumber"`
+	MessageID    string `json:"messageId"`
+	Cost         string `json:"cost"`
+	Status       string `json:"status"`
+	StatusCode   string `json:"statusCode"`
+	MessageParts int    `json:"messageParts"`
+}
+
+type SMSResult struct {
+	UniqueID     string         `json:"unique_id"`
+	CreatedDate  string         `json:"created_date"`
+	CreatedBy    string         `json:"created_by"`
+	UpdatedBy    string         `json:"updated_by"`
+	UpdatedDate  string         `json:"updated_date"`
+	ScheduleTime string         `json:"schedule_time"`
+	SenderID     string         `json:"sender_id"`
+	Text         string         `json:"text"`
+	Summary      string         `json:"summary"`
+	TotalCost    string         `json:"totalCost"`
+	Recipients   []SMSRecipient `json:"recipients"`
+}
+type MailOptions struct {
+	To          string
+	Subject     string
+	Message     string
+	HTML        string
+	Attachments []string
 }
 
 // Generate OTP
@@ -60,17 +94,100 @@ func GenerateOTP() map[string]interface{} {
 	}
 }
 
-// mysql read controller
-func InitDB(dataSourceName string) error {
-	var err error
-	db, err = sql.Open("mysql", dataSourceName)
+// send OTP via either mail or phone
+func SendOTP(c *gin.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println("Recovered from panic in SendOTP:", r)
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "Internal server error"})
+		}
+	}()
+	otp := GenerateOTP()
+	if !otp["success"].(bool) {
+		c.JSON(http.StatusInternalServerError, otp)
+		return
+	}
+	// Here you would typically send the OTP via email or SMS
+	log.Println("Generated OTP:", otp["otp"])
+	c.JSON(http.StatusOK, otp)
+}
+
+// sendsms
+func SendMessage(options SMSOptions) map[string]interface{} {
+	if len(options.To) == 0 || options.Message == "" {
+		return map[string]interface{}{"success": false, "message": "both 'to' and 'message' required and can't be empty"}
+	}
+	// Initialize Africa's Talking
+	at := africastalking.NewClient(configurations.AfricasTalkingUsername, configurations.AfricasTalkingAPIKey)
+	smsService := at.Sms
+	// Send SMS
+	resp, err := smsService.Send(options.Message, configurations.AfricasTalkingSenderID, options.To, nil)
 	if err != nil {
-		return fmt.Errorf("mysql open error: %w", err)
+		return map[string]interface{}{"success": false, "message": err.Error()}
 	}
-	if err := db.Ping(); err != nil {
-		return fmt.Errorf("mysql ping error: %w", err)
+	// Process response
+	totalCost := 0.0
+	recipients := []SMSRecipient{}
+	for _, r := range resp.SMSMessageData.Recipients {
+		var cost float64
+		fmt.Sscanf(r.Cost, "TZS %f", &cost)
+		totalCost += cost
+		recipients = append(recipients, SMSRecipient{
+			PhoneNumber:  r.Number,
+			MessageID:    r.MessageID,
+			Cost:         r.Cost,
+			Status:       r.Status,
+			StatusCode:   r.StatusCode,
+			MessageParts: r.MessageParts,
+		})
 	}
-	return nil
+	result := SMSResult{
+		UniqueID:     primitive.NewObjectID(),
+		CreatedDate:  time.Now().Format(time.RFC3339),
+		CreatedBy:    "system",
+		UpdatedBy:    "system",
+		UpdatedDate:  time.Now().Format(time.RFC3339),
+		ScheduleTime: "null",
+		SenderID:     configurations.AfricasTalkingSenderID,
+		Text:         options.Message,
+		Summary:      resp.SMSMessageData.Message,
+		TotalCost:    fmt.Sprintf("%.2f TZS", totalCost),
+		Recipients:   recipients,
+	}
+	return map[string]interface{}{"success": true, "message": result}
+}
+
+// send main
+func SendMail(options MailOptions) map[string]interface{} {
+	if options.Message == "" || options.To == "" {
+		return map[string]interface{}{"success": false, "message": "both mail to and message required can't be empty"}
+	}
+	subject := options.Subject
+	if subject == "" {
+		subject = options.Message
+	}
+	html := options.HTML
+	if html == "" {
+		html = fmt.Sprintf("<h2>%s</h2>", options.Message)
+	}
+	m := gomail.NewMessage()
+	m.SetHeader("From", configurations.MailSender)
+	m.SetHeader("To", options.To)
+	m.SetHeader("Subject", subject)
+	m.SetBody("text/plain", options.Message)
+	m.AddAlternative("text/html", html)
+
+	for _, attachment := range options.Attachments {
+		m.Attach(attachment)
+	}
+
+	d := gomail.NewDialer(configurations.MailHost, configurations.MailPort, configurations.MailUsername, configurations.MailPassword)
+
+	if err := d.DialAndSend(m); err != nil {
+		return map[string]interface{}{"success": false, "message": err.Error()}
+	}
+
+	return map[string]interface{}{"success": true, "message": "Mail sent successfully"}
 }
 
 // Backup runs mysqldump and returns the result as JSON-compatible map
@@ -78,7 +195,6 @@ func Backup() (map[string]interface{}, error) {
 	timeNow := time.Now()
 	fileName := fmt.Sprintf("mysql_backup_%d.sql", timeNow.Unix())
 	publicDir := filepath.Join(".", "public")
-
 	// Create directory if it doesn't exist
 	if err := os.MkdirAll(publicDir, 0755); err != nil {
 		log.Println("Failed to create public dir:", err)
