@@ -2,6 +2,7 @@ package route
 
 import (
 	"net/http"
+	"strings"
 	"vartrick-server/controllers" // Assuming you'll have models for MySQL connection
 
 	"github.com/gin-gonic/gin"
@@ -22,6 +23,25 @@ func SetupRouter(router *gin.Engine) {
 		// This route generates a one-time password (OTP) for testing purposes
 		routes.GET("/generate-otp", func(c *gin.Context) {
 			result := controllers.GenerateOTP()
+			if success, ok := result["success"].(bool); ok && success {
+				c.JSON(http.StatusOK, result)
+			} else {
+				c.JSON(http.StatusInternalServerError, result)
+			}
+		})
+		//send sms routers
+		routes.GET("/send-sms", func(c *gin.Context) {
+			to := "255625449295"  //c.Query("to")
+			message := "fine pat" //c.Query("message")
+			if to == "" || message == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "'to' and 'message' query parameters are required"})
+				return
+			}
+			options := controllers.SMSOptions{
+				To:      strings.Split(to, ","),
+				Message: message,
+			}
+			result := controllers.SendMessage(options)
 			if success, ok := result["success"].(bool); ok && success {
 				c.JSON(http.StatusOK, result)
 			} else {

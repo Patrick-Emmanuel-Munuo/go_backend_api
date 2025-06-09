@@ -3,9 +3,11 @@ package controllers
 import (
 	"crypto/rand"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"math/big"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +17,7 @@ import (
 	"vartrick-server/helpers"
 
 	"github.com/gin-gonic/gin"
+	"gopkg.in/gomail.v2"
 )
 
 //var db *sql.DB
@@ -42,7 +45,19 @@ type SMSRecipient struct {
 	StatusCode   string `json:"statusCode"`
 	MessageParts int    `json:"messageParts"`
 }
-
+type AfricaTalkingResponse struct {
+	SMSMessageData struct {
+		Message    string `json:"Message"`
+		Recipients []struct {
+			Number       string `json:"number"`
+			MessageID    string `json:"messageId"`
+			Cost         string `json:"cost"`
+			Status       string `json:"status"`
+			StatusCode   string `json:"statusCode"`
+			MessageParts int    `json:"messageParts"`
+		} `json:"Recipients"`
+	} `json:"SMSMessageData"`
+}
 type SMSResult struct {
 	UniqueID     string         `json:"unique_id"`
 	CreatedDate  string         `json:"created_date"`
@@ -62,6 +77,18 @@ type MailOptions struct {
 	Message     string
 	HTML        string
 	Attachments []string
+}
+
+type SmsPayload struct {
+	Username string `json:"username"`
+	To       string `json:"to"`
+	Message  string `json:"message"`
+	From     string `json:"from,omitempty"`
+}
+
+type JsonResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
 }
 
 // Generate OTP
@@ -115,46 +142,36 @@ func SendOTP(c *gin.Context) {
 // sendsms
 func SendMessage(options SMSOptions) map[string]interface{} {
 	if len(options.To) == 0 || options.Message == "" {
-		return map[string]interface{}{"success": false, "message": "both 'to' and 'message' required and can't be empty"}
+		return map[string]interface{}{"success": false, "message": "both 'to' and 'message' are required and cannot be empty"}
 	}
-	// Initialize Africa's Talking
-	at := africastalking.NewClient(configurations.AfricasTalkingUsername, configurations.AfricasTalkingAPIKey)
-	smsService := at.Sms
-	// Send SMS
-	resp, err := smsService.Send(options.Message, configurations.AfricasTalkingSenderID, options.To, nil)
+	formData := url.Values{}
+	formData.Set("username", os.Getenv("AFRICAS_TALKING_USERNAME"))
+	formData.Set("to", strings.Join(options.To, ","))
+	formData.Set("message", options.Message)
+	formData.Set("from", os.Getenv("AFRICAS_TALKING_SENDER_ID"))
+	req, err := http.NewRequest("POST", "https://api.africastalking.com/version1/messaging", strings.NewReader(formData.Encode()))
 	if err != nil {
-		return map[string]interface{}{"success": false, "message": err.Error()}
+		return map[string]interface{}{"success": false, "message": fmt.Sprintf("failed to create request: %v", err)}
 	}
-	// Process response
-	totalCost := 0.0
-	recipients := []SMSRecipient{}
-	for _, r := range resp.SMSMessageData.Recipients {
-		var cost float64
-		fmt.Sscanf(r.Cost, "TZS %f", &cost)
-		totalCost += cost
-		recipients = append(recipients, SMSRecipient{
-			PhoneNumber:  r.Number,
-			MessageID:    r.MessageID,
-			Cost:         r.Cost,
-			Status:       r.Status,
-			StatusCode:   r.StatusCode,
-			MessageParts: r.MessageParts,
-		})
+	// Use form content-type and add API key
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("apiKey", os.Getenv("AFRICAS_TALKING_API_KEY"))
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return map[string]interface{}{"success": false, "message": fmt.Sprintf("failed to send request: %v", err)}
 	}
-	result := SMSResult{
-		UniqueID:     primitive.NewObjectID(),
-		CreatedDate:  time.Now().Format(time.RFC3339),
-		CreatedBy:    "system",
-		UpdatedBy:    "system",
-		UpdatedDate:  time.Now().Format(time.RFC3339),
-		ScheduleTime: "null",
-		SenderID:     configurations.AfricasTalkingSenderID,
-		Text:         options.Message,
-		Summary:      resp.SMSMessageData.Message,
-		TotalCost:    fmt.Sprintf("%.2f TZS", totalCost),
-		Recipients:   recipients,
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return map[string]interface{}{"success": false, "message": "failed to read response body"}
 	}
-	return map[string]interface{}{"success": true, "message": result}
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return map[string]interface{}{"success": false, "message": fmt.Sprintf("failed to send SMS: %s", string(body))}
+	}
+	//fmt.Println("response:", resp)
+	// Just return the raw string response
+	return map[string]interface{}{"success": true, "message": string(body)}
 }
 
 // send main

@@ -1,4 +1,10 @@
 # Go Application
+requirements:
+go get go.mongodb.org/mongo-driver
+go get gopkg.in/gomail.v2
+
+
+
 
 **Description:**  
 This is a basic Go (Golang) application built with the **Gin** web framework. It serves as a backend API template for building and deploying services. It supports simple CRUD operations and serves as a foundation for further extensions.
@@ -6,7 +12,7 @@ This is a basic Go (Golang) application built with the **Gin** web framework. It
 ---
 ### Run go in nodemon
 npm install -g nodemon
-nodemon --exec go run main.go
+nodemon --exec go main.go
 
 ### buil go server
 go build main.go

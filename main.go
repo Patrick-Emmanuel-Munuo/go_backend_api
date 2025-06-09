@@ -31,7 +31,8 @@ type ReadResult struct {
 
 func main() {
 	// Load environment variables from .env file
-	if err := godotenv.Load(); err != nil {
+	err := godotenv.Load(".env")
+	if err != nil {
 		log.Println("Warning: No .env file found or failed to load")
 	}
 	// Recover from panic (simulating try-catch)
