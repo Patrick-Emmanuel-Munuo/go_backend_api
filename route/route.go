@@ -18,6 +18,19 @@ func SetupRouter(router *gin.Engine) {
 				"message": "Backend MySQL API application router is working",
 			})
 		})
+		// This route decript-token
+		routes.GET("/decript-token", func(c *gin.Context) {
+			token := c.Query("token")
+			result := controllers.DecriptToken(map[string]interface{}{
+				"token": token,
+			})
+
+			if success, ok := result["success"].(bool); ok && success {
+				c.JSON(http.StatusOK, result)
+			} else {
+				c.JSON(http.StatusInternalServerError, result)
+			}
+		})
 		// This route generates a one-time password (OTP) for testing purposes
 		routes.GET("/generate-otp", func(c *gin.Context) {
 			result := controllers.GenerateOTP()
@@ -27,7 +40,6 @@ func SetupRouter(router *gin.Engine) {
 				c.JSON(http.StatusInternalServerError, result)
 			}
 		})
-
 		//This route generates and send otp one-time password (OTP) for testing purposes
 		routes.GET("/send-otp", func(c *gin.Context) {
 			result := controllers.GenerateOTP()

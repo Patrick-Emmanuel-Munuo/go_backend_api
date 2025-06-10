@@ -115,6 +115,195 @@ func SendOTP(c *gin.Context) {
 	c.JSON(http.StatusOK, otp)
 }
 
+// decript token
+func DecriptToken(options map[string]interface{}) map[string]interface{} {
+	// Validate token field
+	tokenRaw, ok := options["token"]
+	if !ok {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Token field is required.",
+		}
+	}
+	tokenStr, ok := tokenRaw.(string)
+	if !ok || tokenStr == "" {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Token must be a string.",
+		}
+	}
+	// Remove dashes
+	tokenStr = strings.ReplaceAll(tokenStr, "-", "")
+	// Validate format: must be 20 digits
+	if len(tokenStr) != 20 || !helpers.IsAllDigits(tokenStr) {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Invalid token format. Must be 20 digits (dashes allowed).",
+		}
+	}
+	// Convert token string to integer
+	// Convert to *big.Int
+	tokenBigInt := new(big.Int)
+	_, success := tokenBigInt.SetString(tokenStr, 10)
+	if !success {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Failed to parse token as big integer.",
+		}
+	}
+	// Convert to binary with 66 bits
+	tokenBin := fmt.Sprintf("%066b", tokenBigInt)
+	//tokenBin := helpers.DecToBin(token,)
+	// Generate decoder key (already returns bin string)
+	keyRes := helpers.GenerateDecoderKey()
+	if !keyRes["success"].(bool) {
+		return map[string]interface{}{
+			"success": false,
+			"message": keyRes["message"].(string),
+		}
+	}
+
+	keyBin := keyRes["message"].(string)
+	keyBytes := helpers.BinStrToBytes(keyBin)
+
+	// Perform transposition and extract class bits
+	tokRes := helpers.TranspositionAndRemoveClassBits(tokenBin)
+	if !tokRes["success"].(bool) {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Failed to extract token blocks",
+		}
+	}
+	tokData := tokRes["message"].(map[string]interface{})
+	restored := tokData["data"].(string)
+	classBits := tokData["class"].(string)
+	if len(restored) < 64 {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Token block must be at least 64 bits.",
+		}
+	}
+
+	// Decrypt the first 64-bit block (8 bytes)
+	encBytes := helpers.BinStrToBytes(restored[:64])
+	decRes := helpers.Decrypt3DES(encBytes, keyBytes)
+	if !decRes["success"].(bool) {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Decryption failed: " + decRes["message"].(string),
+		}
+	}
+	decBytes := decRes["message"].([]byte)
+
+	// Parse decrypted binary string
+	binStr := helpers.BytesToBinStr(decBytes)
+	if len(binStr) < 64 {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Decrypted data is less than 64 bits.",
+		}
+	}
+	rndBlock := binStr[0:3]
+	tidBlock := binStr[3:25]
+	amtBlock := binStr[25:48]
+	crcBlock := binStr[48:64]
+
+	//fmt.Println("amtBlock:", amtBlock)
+	//fmt.Println("tidBlock:", tidBlock)
+	//fmt.Println("binStr:", binStr)
+	//crc validation
+	dataBin := binStr[:48]
+	crcInTokenBin := binStr[48:64]
+	// Convert dataBin to hex string, padded to 14 hex chars (48 bits = 12 bytes = 14 hex chars with leading zeros)
+	dataHex := helpers.BinToHex(dataBin)
+	if len(dataHex) < 14 {
+		dataHex = fmt.Sprintf("%014s", dataHex)
+	}
+	// Convert hex string to bytes
+	dataBytes, err := helpers.HexToBytes(dataHex)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Failed to convert data hex to bytes: " + err.Error(),
+		}
+	}
+	// Calculate CRC16 of dataBytes
+	crcRes := helpers.CalculateCRC16(dataBytes)
+	if !crcRes["success"].(bool) {
+		return map[string]interface{}{
+			"success": false,
+			"message": "CRC calculation failed: " + crcRes["message"].(string),
+		}
+	}
+	crcCalcBin := crcRes["message"].(string)
+	// Pad CRC binary string to 16 bits if needed
+	if len(crcCalcBin) < 16 {
+		crcCalcBin = fmt.Sprintf("%016s", crcCalcBin)
+	}
+	// Validate CRC match
+	if crcCalcBin != crcInTokenBin {
+		return map[string]interface{}{
+			"success": false,
+			"message": "CRC mismatch - invalid token data",
+		}
+	}
+
+	// Time validations
+	// Parse timestamp (in minutes since base date)
+	tidMinutes, err := strconv.ParseInt(tidBlock, 2, 64)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Failed to parse timestamp block: " + err.Error(),
+		}
+	}
+	timeNow := time.Now()
+	// Assuming you have parsed tidMinutes from earlier as int64
+	issueTime := helpers.BaseDate.Add(time.Duration(tidMinutes) * time.Minute)
+
+	if timeNow.Sub(issueTime) > 365*24*time.Hour {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Token expired",
+		}
+	}
+	if issueTime.Before(helpers.BaseDate) || issueTime.After(timeNow.Add(24*time.Hour)) {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Change meter base date",
+		}
+	}
+	// Decode units block (23 bits)
+	unitsRes := helpers.DecodeUnits(amtBlock)
+	if !unitsRes["success"].(bool) {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Failed to decode units: " + unitsRes["message"].(string),
+		}
+	}
+	units := unitsRes["message"]
+	// Calculate timesx
+	//issueTime := helpers.BaseDate.Add(time.Duration(tidMinutes) * time.Minute)
+	expiryTime := issueTime.AddDate(1, 0, 0)
+
+	// Assemble result
+	result := map[string]interface{}{
+		"crc":                helpers.BinStrToDecimal(crcBlock),
+		"class":              helpers.BinStrToDecimal(classBits),
+		"identifier_minutes": tidMinutes,
+		"units":              units,
+		"issued_date":        issueTime.Format(time.RFC3339),
+		"expiry_date":        expiryTime.Format(time.RFC3339),
+		"base_date":          helpers.BaseDate,
+		"random":             helpers.BinStrToDecimal(rndBlock),
+		"status":             "Token successfully decrypted and parsed.",
+	}
+	return map[string]interface{}{
+		"success": true,
+		"message": result,
+	}
+}
+
 // SendMessage sends an SMS using Africa's Talking API
 func SendMessage(options SMSOptions) map[string]interface{} {
 	if len(options.To) == 0 || strings.TrimSpace(options.Message) == "" {
