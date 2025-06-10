@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"crypto/rand"
+	"encoding/xml"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -11,9 +12,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
-	"vartrick-server/configurations"
 	"vartrick-server/helpers"
 
 	"github.com/gin-gonic/gin"
@@ -28,67 +29,41 @@ type Options struct {
 	Condition   map[string]interface{} `json:"condition"`
 	OrCondition map[string]interface{} `json:"or_condition"`
 }
-type ReadResult struct {
-	Success bool        `json:"success"`
-	Message interface{} `json:"message"`
-}
+
+// SMSOptions defines SMS parameters
 type SMSOptions struct {
 	To      []string
 	Message string
 }
 
-type SMSRecipient struct {
-	PhoneNumber  string `json:"phoneNumber"`
-	MessageID    string `json:"messageId"`
-	Cost         string `json:"cost"`
-	Status       string `json:"status"`
-	StatusCode   string `json:"statusCode"`
-	MessageParts int    `json:"messageParts"`
-}
-type AfricaTalkingResponse struct {
+// AfricaTalkingXMLResponse is for parsing XML response from Africa's Talking
+type AfricaTalkingXMLResponse struct {
+	XMLName        xml.Name `xml:"AfricasTalkingResponse"`
 	SMSMessageData struct {
-		Message    string `json:"Message"`
-		Recipients []struct {
-			Number       string `json:"number"`
-			MessageID    string `json:"messageId"`
-			Cost         string `json:"cost"`
-			Status       string `json:"status"`
-			StatusCode   string `json:"statusCode"`
-			MessageParts int    `json:"messageParts"`
-		} `json:"Recipients"`
-	} `json:"SMSMessageData"`
+		Message    string `xml:"Message"`
+		Recipients struct {
+			Recipient struct {
+				Number       string `xml:"number"`
+				Cost         string `xml:"cost"`
+				Status       string `xml:"status"`
+				StatusCode   string `xml:"statusCode"`
+				MessageID    string `xml:"messageId"`
+				MessageParts string `xml:"messageParts"`
+			} `xml:"Recipient"`
+		} `xml:"Recipients"`
+	} `xml:"SMSMessageData"`
 }
-type SMSResult struct {
-	UniqueID     string         `json:"unique_id"`
-	CreatedDate  string         `json:"created_date"`
-	CreatedBy    string         `json:"created_by"`
-	UpdatedBy    string         `json:"updated_by"`
-	UpdatedDate  string         `json:"updated_date"`
-	ScheduleTime string         `json:"schedule_time"`
-	SenderID     string         `json:"sender_id"`
-	Text         string         `json:"text"`
-	Summary      string         `json:"summary"`
-	TotalCost    string         `json:"totalCost"`
-	Recipients   []SMSRecipient `json:"recipients"`
+type JsonResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
 }
+
 type MailOptions struct {
 	To          string
 	Subject     string
 	Message     string
 	HTML        string
 	Attachments []string
-}
-
-type SmsPayload struct {
-	Username string `json:"username"`
-	To       string `json:"to"`
-	Message  string `json:"message"`
-	From     string `json:"from,omitempty"`
-}
-
-type JsonResponse struct {
-	Success bool   `json:"success"`
-	Message string `json:"message"`
 }
 
 // Generate OTP
@@ -139,72 +114,199 @@ func SendOTP(c *gin.Context) {
 	c.JSON(http.StatusOK, otp)
 }
 
-// sendsms
+// SendMessage sends an SMS using Africa's Talking API
 func SendMessage(options SMSOptions) map[string]interface{} {
-	if len(options.To) == 0 || options.Message == "" {
-		return map[string]interface{}{"success": false, "message": "both 'to' and 'message' are required and cannot be empty"}
+	if len(options.To) == 0 || strings.TrimSpace(options.Message) == "" {
+		return map[string]interface{}{
+			"Success": false,
+			"Message": "both 'to' and 'message' are required and cannot be empty",
+		}
 	}
 	formData := url.Values{}
 	formData.Set("username", os.Getenv("AFRICAS_TALKING_USERNAME"))
 	formData.Set("to", strings.Join(options.To, ","))
 	formData.Set("message", options.Message)
 	formData.Set("from", os.Getenv("AFRICAS_TALKING_SENDER_ID"))
+
 	req, err := http.NewRequest("POST", "https://api.africastalking.com/version1/messaging", strings.NewReader(formData.Encode()))
 	if err != nil {
-		return map[string]interface{}{"success": false, "message": fmt.Sprintf("failed to create request: %v", err)}
+		return map[string]interface{}{
+			"Success": false,
+			"Message": fmt.Sprintf("failed to create request: %v", err),
+		}
 	}
-	// Use form content-type and add API key
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("apiKey", os.Getenv("AFRICAS_TALKING_API_KEY"))
+
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return map[string]interface{}{"success": false, "message": fmt.Sprintf("failed to send request: %v", err)}
+		// Log full error for debugging
+		log.Println("failed to send request error : ", err)
+		// Clean user-facing message
+		userMessage := "failed to send request to SMS service"
+		// Optional: Provide more specific feedback based on error content
+		if strings.Contains(err.Error(), "no such host") {
+			userMessage = "unable to reach SMS server – check network"
+		} else if strings.Contains(err.Error(), "dial tcp") {
+			userMessage = "connection to SMS service failed"
+		}
+		return map[string]interface{}{
+			"Success": false,
+			"Message": userMessage,
+		}
 	}
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return map[string]interface{}{"success": false, "message": "failed to read response body"}
+		return map[string]interface{}{
+			"Success": false,
+			"Message": "failed to read response body",
+		}
 	}
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return map[string]interface{}{"success": false, "message": fmt.Sprintf("failed to send SMS: %s", string(body))}
+		log.Printf("SMS send failed with status %d. Response body: %s\n", resp.StatusCode, string(body))
+		return map[string]interface{}{
+			"Success": false,
+			"Message": "SMS send failed. Please try again later.",
+		}
 	}
-	//fmt.Println("response:", resp)
-	// Just return the raw string response
-	return map[string]interface{}{"success": true, "message": string(body)}
+	// Parse XML response
+	var parsedResponse AfricaTalkingXMLResponse
+	err = xml.Unmarshal(body, &parsedResponse)
+	if err != nil {
+		log.Printf("XML parse error: %v\n", err) // for internal logs
+		return map[string]interface{}{
+			"Success": false,
+			"Message": "Invalid response format from SMS provider.",
+		}
+	}
+	status := parsedResponse.SMSMessageData.Recipients.Recipient.Status
+	if status != "Success" {
+		log.Printf("SMS error: Status=%s, StatusCode=%s\n", status, parsedResponse.SMSMessageData.Recipients.Recipient.StatusCode)
+		return map[string]interface{}{
+			"Success": false,
+			"Message": "SMS not sent. Please try again later.",
+			//data: parsedResponse,
+		}
+	}
+	return map[string]interface{}{
+		"Success": true,
+		"Message": parsedResponse.SMSMessageData.Message,
+		//"Data":    parsedResponse,
+	}
 }
 
-// send main
-func SendMail(options MailOptions) map[string]interface{} {
-	if options.Message == "" || options.To == "" {
-		return map[string]interface{}{"success": false, "message": "both mail to and message required can't be empty"}
+func SendMail(options map[string]interface{}) map[string]interface{} {
+	// Validate required fields
+	msg, msgOk := options["Message"].(string)
+	toRaw, toOk := options["To"]
+	if !msgOk || !toOk || msg == "" {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Both 'To' and 'Message' fields are required, and 'Message' must be a string.",
+		}
 	}
-	subject := options.Subject
+	var recipients []string
+	switch v := toRaw.(type) {
+	case string:
+		if v == "" {
+			return map[string]interface{}{
+				"success": false,
+				"message": "'To' field cannot be empty",
+			}
+		}
+		recipients = []string{v}
+	case []string:
+		if len(v) == 0 {
+			return map[string]interface{}{
+				"success": false,
+				"message": "'To' field slice cannot be empty",
+			}
+		}
+		recipients = v
+	default:
+		return map[string]interface{}{
+			"success": false,
+			"message": "'To' field must be a string or slice of strings",
+		}
+	}
+	// Basic validation on all recipients (check '@')
+	for _, email := range recipients {
+		if !strings.Contains(email, "@") {
+			return map[string]interface{}{
+				"success": false,
+				"message": fmt.Sprintf("Invalid email address format: %s", email),
+			}
+		}
+	}
+	// Subject fallback
+	subject, _ := options["Subject"].(string)
 	if subject == "" {
-		subject = options.Message
+		subject = msg
 	}
-	html := options.HTML
+	// HTML fallback
+	html, _ := options["HTML"].(string)
 	if html == "" {
-		html = fmt.Sprintf("<h2>%s</h2>", options.Message)
+		html = fmt.Sprintf("<h2>%s</h2>", msg)
 	}
+	// Required environment variables
+	sender := os.Getenv("MAIL_SENDER")
+	host := os.Getenv("MAIL_HOST")
+	username := os.Getenv("MAIL_ADDRESS")
+	password := os.Getenv("MAIL_PASSWORD")
+	portStr := os.Getenv("MAIL_PORT")
+	if sender == "" || host == "" || username == "" || password == "" || portStr == "" {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Missing required environment variables for SMTP configuration.",
+		}
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Invalid MAIL_PORT. Ensure it's a valid number.",
+		}
+	}
+	// Compose the message
 	m := gomail.NewMessage()
-	m.SetHeader("From", configurations.MailSender)
-	m.SetHeader("To", options.To)
+	m.SetHeader("From", sender)
+	m.SetHeader("To", recipients...)
 	m.SetHeader("Subject", subject)
-	m.SetBody("text/plain", options.Message)
+	m.SetBody("text/plain", msg)
 	m.AddAlternative("text/html", html)
-
-	for _, attachment := range options.Attachments {
-		m.Attach(attachment)
+	// Handle attachments
+	if attachments, ok := options["Attachments"].([]string); ok {
+		for _, attachment := range attachments {
+			if _, err := os.Stat(attachment); err != nil {
+				return map[string]interface{}{
+					"success": false,
+					"message": fmt.Sprintf("Failed to attach file %s: %v", attachment, err),
+				}
+			}
+			m.Attach(attachment)
+		}
 	}
-
-	d := gomail.NewDialer(configurations.MailHost, configurations.MailPort, configurations.MailUsername, configurations.MailPassword)
-
+	// Configure SMTP
+	d := gomail.NewDialer(host, port, username, password)
+	// Send email
 	if err := d.DialAndSend(m); err != nil {
-		return map[string]interface{}{"success": false, "message": err.Error()}
+		return map[string]interface{}{
+			"success": false,
+			"message": fmt.Sprintf("Failed to send email: %v", err),
+		}
 	}
-
-	return map[string]interface{}{"success": true, "message": "Mail sent successfully"}
+	return map[string]interface{}{
+		"success": true,
+		"message": map[string]interface{}{
+			"status":     "Mail sent successfully",
+			"data":       "response",
+			"timestamp":  time.Now().Format(time.RFC3339),
+			"recipients": recipients,
+			"subject":    subject,
+		},
+	}
 }
 
 // Backup runs mysqldump and returns the result as JSON-compatible map
@@ -302,7 +404,6 @@ func Read(c *gin.Context) {
 		}
 		results = append(results, rowMap)
 	}
-
 	// Convert []uint8 (MySQL bytes) to string for JSON compatibility
 	for i, row := range results {
 		newRow := make(map[string]interface{})

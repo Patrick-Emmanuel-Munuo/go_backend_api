@@ -12,7 +12,7 @@ This is a basic Go (Golang) application built with the **Gin** web framework. It
 ---
 ### Run go in nodemon
 npm install -g nodemon
-nodemon --exec go main.go
+nodemon --exec go run  main.go
 
 ### buil go server
 go build main.go

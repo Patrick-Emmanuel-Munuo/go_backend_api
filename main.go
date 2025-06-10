@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"runtime"
 
 	"fmt"
 	"log"
@@ -42,7 +43,8 @@ func main() {
 			os.Exit(1)
 		}
 	}()
-
+	// Use all CPU cores
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "2010" // Default port

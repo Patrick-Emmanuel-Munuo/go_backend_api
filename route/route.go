@@ -9,8 +9,6 @@ import (
 )
 
 func SetupRouter(router *gin.Engine) {
-	// Connect to your database here
-	// db := models.ConnectDatabase()
 	routes := router.Group("/api")
 	{
 		// Base route for testing if the server is running
@@ -29,6 +27,17 @@ func SetupRouter(router *gin.Engine) {
 				c.JSON(http.StatusInternalServerError, result)
 			}
 		})
+
+		//This route generates and send otp one-time password (OTP) for testing purposes
+		routes.GET("/send-otp", func(c *gin.Context) {
+			result := controllers.GenerateOTP()
+			if success, ok := result["success"].(bool); ok && success {
+				c.JSON(http.StatusOK, result)
+			} else {
+				c.JSON(http.StatusInternalServerError, result)
+			}
+		})
+
 		//send sms routers
 		routes.GET("/send-sms", func(c *gin.Context) {
 			to := "255625449295"  //c.Query("to")
@@ -41,11 +50,40 @@ func SetupRouter(router *gin.Engine) {
 				To:      strings.Split(to, ","),
 				Message: message,
 			}
-			result := controllers.SendMessage(options)
-			if success, ok := result["success"].(bool); ok && success {
-				c.JSON(http.StatusOK, result)
+			responce := controllers.SendMessage(options)
+			if success, ok := responce["success"].(bool); ok && success {
+				c.JSON(http.StatusOK, responce)
 			} else {
-				c.JSON(http.StatusInternalServerError, result)
+				c.JSON(http.StatusInternalServerError, responce)
+			}
+		})
+
+		//send mail routers
+		routes.GET("/send-mail", func(c *gin.Context) {
+			to := "patrickmunuo98@gmail.com" //c.Query("to") // e.g. "user1@example.com,user2@example.com"
+			message := "fine pat"            //c.Query("message")
+			if to == "" || message == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "'to' and 'message' query parameters are required"})
+				return
+			}
+			// Split multiple emails by comma, trim spaces
+			recipients := strings.Split(to, ",")
+			for i := range recipients {
+				recipients[i] = strings.TrimSpace(recipients[i])
+			}
+
+			options := map[string]interface{}{
+				"To":      recipients,
+				"Message": message,
+				"Subject": "Test Email",
+				"HTML":    "<b>This is bold</b>",
+				// "Attachments": []string{"./report.pdf"},
+			}
+			responce := controllers.SendMail(options)
+			if success, ok := responce["success"].(bool); ok && success {
+				c.JSON(http.StatusOK, responce)
+			} else {
+				c.JSON(http.StatusInternalServerError, responce)
 			}
 		})
 	}
