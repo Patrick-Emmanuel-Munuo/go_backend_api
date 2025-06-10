@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -193,12 +194,14 @@ func SendMessage(options SMSOptions) map[string]interface{} {
 	return map[string]interface{}{
 		"Success": true,
 		"Message": parsedResponse.SMSMessageData.Message,
-		//"Data":    parsedResponse,
+		"Data":    parsedResponse,
 	}
 }
 
 func SendMail(options map[string]interface{}) map[string]interface{} {
 	// Validate required fields
+	var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
+
 	msg, msgOk := options["Message"].(string)
 	toRaw, toOk := options["To"]
 	if !msgOk || !toOk || msg == "" {
@@ -233,7 +236,7 @@ func SendMail(options map[string]interface{}) map[string]interface{} {
 	}
 	// Basic validation on all recipients (check '@')
 	for _, email := range recipients {
-		if !strings.Contains(email, "@") {
+		if !emailRegex.MatchString(email) {
 			return map[string]interface{}{
 				"success": false,
 				"message": fmt.Sprintf("Invalid email address format: %s", email),
@@ -250,6 +253,7 @@ func SendMail(options map[string]interface{}) map[string]interface{} {
 	if html == "" {
 		html = fmt.Sprintf("<h2>%s</h2>", msg)
 	}
+
 	// Required environment variables
 	sender := os.Getenv("MAIL_SENDER")
 	host := os.Getenv("MAIL_HOST")
@@ -274,6 +278,12 @@ func SendMail(options map[string]interface{}) map[string]interface{} {
 	m.SetHeader("From", sender)
 	m.SetHeader("To", recipients...)
 	m.SetHeader("Subject", subject)
+	if cc, ok := options["CC"].([]string); ok && len(cc) > 0 {
+		m.SetHeader("Cc", cc...)
+	}
+	if bcc, ok := options["BCC"].([]string); ok && len(bcc) > 0 {
+		m.SetHeader("Bcc", bcc...)
+	}
 	m.SetBody("text/plain", msg)
 	m.AddAlternative("text/html", html)
 	// Handle attachments

@@ -49,7 +49,7 @@ func main() {
 	if port == "" {
 		port = "2010" // Default port
 	}
-
+	gin.SetMode(gin.ReleaseMode)
 	router := gin.Default()
 
 	// Initialize and check the DB connection with JSON logging
