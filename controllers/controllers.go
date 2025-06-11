@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"vartrick-server/helpers"
+	"vartrick/helpers"
 
 	"github.com/gin-gonic/gin"
 	"gopkg.in/gomail.v2"

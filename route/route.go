@@ -3,7 +3,7 @@ package route
 import (
 	"net/http"
 	"strings"
-	"vartrick-server/controllers" // Assuming you'll have models for MySQL connection
+	"vartrick/controllers" // Assuming you'll have models for MySQL connection
 
 	"github.com/gin-gonic/gin"
 )

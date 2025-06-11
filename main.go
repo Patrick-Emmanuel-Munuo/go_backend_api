@@ -8,8 +8,8 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"vartrick-server/controllers"
-	"vartrick-server/route"
+	"vartrick/controllers"
+	"vartrick/route"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql"
