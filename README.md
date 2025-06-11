@@ -17,6 +17,9 @@ nodemon --exec go run main.go
 ### buil go server
 go build main.go
 
+#buld for deployment
+go mod tidy && go build -tags netgo -ldflags '-s -w' -o app
+
 
  Response
 

@@ -32,7 +32,7 @@ Thumbs.db
 *.log
 
 # Env and secret files
-.env
+#.env
 .env.*
 
 # Temporary files
