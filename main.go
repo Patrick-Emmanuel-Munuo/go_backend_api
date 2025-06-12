@@ -56,7 +56,7 @@ func main() {
 	// Initialize DB connection
 	if err := InitDBConnection(); err != nil {
 		log.Printf(`{"success": false, "message": "Failed to connect to MySQL", "error": "%v"}`, err)
-		os.Exit(1)
+		//os.Exit(1)
 	} else {
 		log.Printf(`{"success": true, "message": "Connected to MySQL successfully"}`)
 	}
