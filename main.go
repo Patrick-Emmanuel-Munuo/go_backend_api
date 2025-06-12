@@ -2,7 +2,9 @@ package main
 
 import (
 	"database/sql"
+	"io/ioutil"
 	"runtime"
+	"strings"
 
 	"fmt"
 	"log"
@@ -49,6 +51,16 @@ func main() {
 	if port == "" {
 		port = "2010" // Default port
 	}
+
+	security := os.Getenv("SECURITY")
+	if security == "" {
+		security = "https" // Default to HTTPS for deployed domain
+	}
+
+	domain := os.Getenv("DOMAIN") // e.g., vartrick.onrender.com
+
+	// Construct the full server URL
+	url := fmt.Sprintf("%s://%s", security, domain)
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.Default()
 
@@ -79,11 +91,52 @@ func main() {
 			"message": "Wrong route or HTTP method",
 		})
 	})
-	// Start the server
-	if err := router.Run(":" + port); err != nil {
-		log.Printf(`{"success": false, "message": "Failed to start Gin server", "error": "%v"}`, err)
-		os.Exit(1)
+
+	// Start the server http or https
+	certPEM := os.Getenv("SSL_CERTIFICATE")
+	keyPEM := os.Getenv("SSL_KEY")
+	// Replace literal \n with actual newlines if needed
+	certPEM = strings.ReplaceAll(certPEM, `\n`, "\n")
+	keyPEM = strings.ReplaceAll(keyPEM, `\n`, "\n")
+
+	if security == "https" {
+		// Create temp cert file
+		certFile, err := ioutil.TempFile("", "cert-*.pem")
+		if err != nil {
+			log.Fatalf("Failed to create temp cert file: %v", err)
+		}
+		defer os.Remove(certFile.Name())
+
+		// Write cert PEM to file
+		if _, err := certFile.Write([]byte(certPEM)); err != nil {
+			log.Fatalf("Failed to write cert file: %v", err)
+		}
+		certFile.Close()
+
+		// Create temp key file
+		keyFile, err := ioutil.TempFile("", "key-*.pem")
+		if err != nil {
+			log.Fatalf("Failed to create temp key file: %v", err)
+		}
+		defer os.Remove(keyFile.Name())
+
+		// Write key PEM to file
+		if _, err := keyFile.Write([]byte(keyPEM)); err != nil {
+			log.Fatalf("Failed to write key file: %v", err)
+		}
+		keyFile.Close()
+		if err := router.RunTLS(":"+port, certPEM, keyPEM); err != nil {
+			log.Printf(`{"success": false, "message": "Failed to start Gin HTTPS server", "error": "%v"}`, err)
+			os.Exit(1)
+		}
+	} else {
+		if err := router.Run(":" + port); err != nil {
+			log.Printf(`{"success": false, "message": "Failed to start Gin HTTP server", "error": "%v"}`, err)
+			os.Exit(1)
+		}
 	}
+	log.Printf(`{"success": true, "message": "server is running on %v"}`, url)
+
 }
 
 // InitDBConnection establishes and checks the MySQL connection

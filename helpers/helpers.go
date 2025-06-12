@@ -9,12 +9,30 @@ import (
 	"log"
 	"math"
 	"math/big"
+	"net"
 	"strconv"
 	"strings"
 	"time"
 )
 
 var BaseDate = time.Date(2025, 5, 5, 0, 0, 0, 0, time.UTC)
+
+// getServerIPAddress tries to find a non-loopback IP address
+func GetServerIPAddress() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return "localhost"
+	}
+
+	for _, addr := range addrs {
+		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP.String()
+			}
+		}
+	}
+	return "localhost" // fallback
+}
 
 // ---------- SQL HELPERS ----------
 func Where(cond map[string]interface{}) (string, []interface{}) {
