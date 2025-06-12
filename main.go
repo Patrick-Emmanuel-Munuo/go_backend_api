@@ -27,6 +27,7 @@ type Options struct {
 	Condition   map[string]interface{} `json:"condition"`
 	OrCondition map[string]interface{} `json:"or_condition"`
 }
+
 type ReadResult struct {
 	Success bool        `json:"success"`
 	Message interface{} `json:"message"`
@@ -56,7 +57,6 @@ func main() {
 	if security == "" {
 		security = "https" // Default to HTTPS for deployed domain
 	}
-
 	domain := os.Getenv("DOMAIN") // e.g., vartrick.onrender.com
 
 	// Construct the full server URL
@@ -64,8 +64,7 @@ func main() {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.Default()
 
-	// Initialize and check the DB connection with JSON logging
-	// Initialize DB connection
+	// Initialize and check the DB connection with JSON logging Initialize DB connection
 	if err := InitDBConnection(); err != nil {
 		log.Printf(`{"success": false, "message": "Failed to connect to MySQL", "error": "%v"}`, err)
 		//os.Exit(1)
@@ -158,10 +157,8 @@ func InitDBConnection() error {
 	if err != nil {
 		return fmt.Errorf("failed to connect to MySQL: %w", err)
 	}
-
 	if err := db.Ping(); err != nil {
 		return fmt.Errorf("failed to ping MySQL: %w", err)
 	}
-
 	return nil
 }

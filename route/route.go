@@ -64,8 +64,8 @@ func SetupRouter(router *gin.Engine) {
 
 		//send sms routers
 		routes.GET("/send-sms", func(c *gin.Context) {
-			to := "255625449295"  //c.Query("to")
-			message := "fine pat" //c.Query("message")
+			to := c.Query("to")
+			message := c.Query("message")
 			if to == "" || message == "" {
 				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "'to' and 'message' query parameters are required"})
 				return
