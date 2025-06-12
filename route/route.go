@@ -36,7 +36,6 @@ func SetupRouter(router *gin.Engine) {
 			result := controllers.DecriptToken(map[string]interface{}{
 				"token": token,
 			})
-
 			if success, ok := result["success"].(bool); ok && success {
 				c.JSON(http.StatusOK, result)
 			} else {
@@ -61,7 +60,6 @@ func SetupRouter(router *gin.Engine) {
 				c.JSON(http.StatusInternalServerError, result)
 			}
 		})
-
 		//send sms routers
 		routes.GET("/send-sms", func(c *gin.Context) {
 			to := c.Query("to")
@@ -70,22 +68,20 @@ func SetupRouter(router *gin.Engine) {
 				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "'to' and 'message' query parameters are required"})
 				return
 			}
-			options := controllers.SMSOptions{
-				To:      strings.Split(to, ","),
-				Message: message,
-			}
-			responce := controllers.SendMessage(options)
+			responce := controllers.SendMessage(map[string]interface{}{
+				"to":      strings.Split(to, ","),
+				"message": message,
+			})
 			if success, ok := responce["success"].(bool); ok && success {
 				c.JSON(http.StatusOK, responce)
 			} else {
 				c.JSON(http.StatusInternalServerError, responce)
 			}
 		})
-
 		//send mail routers
 		routes.GET("/send-mail", func(c *gin.Context) {
-			to := "patrickmunuo98@gmail.com" //c.Query("to") // e.g. "user1@example.com,user2@example.com"
-			message := "fine pat"            //c.Query("message")
+			to := c.Query("to") // e.g. "user1@example.com,user2@example.com"
+			message := c.Query("message")
 			if to == "" || message == "" {
 				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "'to' and 'message' query parameters are required"})
 				return
@@ -95,7 +91,6 @@ func SetupRouter(router *gin.Engine) {
 			for i := range recipients {
 				recipients[i] = strings.TrimSpace(recipients[i])
 			}
-
 			options := map[string]interface{}{
 				"To":      recipients,
 				"Message": message,
@@ -111,7 +106,6 @@ func SetupRouter(router *gin.Engine) {
 			}
 		})
 	}
-
 	// Example of MySQL routes (commented for now)
 	mysql := router.Group("/api/mysql")
 	{

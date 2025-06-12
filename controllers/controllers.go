@@ -32,12 +32,6 @@ type Options struct {
 	OrCondition map[string]interface{} `json:"or_condition"`
 }
 
-// SMSOptions defines SMS parameters
-type SMSOptions struct {
-	To      []string
-	Message string
-}
-
 // AfricaTalkingXMLResponse is for parsing XML response from Africa's Talking
 type AfricaTalkingXMLResponse struct {
 	XMLName        xml.Name `xml:"AfricasTalkingResponse"`
@@ -54,18 +48,6 @@ type AfricaTalkingXMLResponse struct {
 			} `xml:"Recipient"`
 		} `xml:"Recipients"`
 	} `xml:"SMSMessageData"`
-}
-type JsonResponse struct {
-	Success bool   `json:"success"`
-	Message string `json:"message"`
-}
-
-type MailOptions struct {
-	To          string
-	Subject     string
-	Message     string
-	HTML        string
-	Attachments []string
 }
 
 // Generate OTP
@@ -348,7 +330,6 @@ func EncriptToken(options map[string]interface{}) map[string]interface{} {
 	// Calculate TID (minutes since base date)
 	tidMinutes := int64(issueTime.Sub(helpers.BaseDate).Minutes())
 	tidBin := fmt.Sprintf("%022b", tidMinutes)
-
 	// Encode units (amount → binary string of 23 bits)
 	amtRes := helpers.EncodeUnits(amount)
 	if !amtRes["success"].(bool) {
@@ -358,7 +339,6 @@ func EncriptToken(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 	amtBlock := amtRes["message"].(string)
-
 	// Generate 3-bit random block
 	randRes := helpers.GenerateRandomBits(3)
 	if !randRes["success"].(bool) {
@@ -367,7 +347,6 @@ func EncriptToken(options map[string]interface{}) map[string]interface{} {
 	randomBits := randRes["message"].(string)
 	// Construct binary string: random(3) + tid(22) + amount(23) = 48 bits
 	dataBin := randomBits + tidBin + amtBlock
-
 	// Convert to hex for CRC
 	dataHex := helpers.BinToHex(dataBin)
 	if len(dataHex) < 14 {
@@ -380,7 +359,6 @@ func EncriptToken(options map[string]interface{}) map[string]interface{} {
 			"message": "Failed to convert data to bytes: " + err.Error(),
 		}
 	}
-
 	// Calculate CRC16 on first 48 bits
 	crcRes := helpers.CalculateCRC16(dataBytes)
 	if !crcRes["success"].(bool) {
@@ -393,13 +371,10 @@ func EncriptToken(options map[string]interface{}) map[string]interface{} {
 	if len(crcBin) < 16 {
 		crcBin = fmt.Sprintf("%016s", crcBin)
 	}
-
 	// Full binary block (64-bit)
 	fullBin := dataBin + crcBin
-
 	// Convert to byte array
 	fullBytes := helpers.BinStrToBytes(fullBin)
-
 	// Generate decoder key
 	keyRes := helpers.GenerateDecoderKey()
 	if !keyRes["success"].(bool) {
@@ -410,7 +385,6 @@ func EncriptToken(options map[string]interface{}) map[string]interface{} {
 	}
 	keyBin := keyRes["message"].(string)
 	keyBytes := helpers.BinStrToBytes(keyBin)
-
 	// Encrypt with 3DES
 	encRes := helpers.Encrypt3DES(fullBytes, keyBytes)
 	if !encRes["success"].(bool) {
@@ -420,7 +394,6 @@ func EncriptToken(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 	encBytes := encRes["message"].([]byte)
-
 	// Convert encrypted bytes to binary string
 	encBin := helpers.BytesToBinStr(encBytes)
 	if len(encBin) < 64 {
@@ -466,7 +439,6 @@ func EncriptToken(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 	token := tokenResponce["message"].(string)
-
 	// Return response
 	return map[string]interface{}{
 		"success": true,
@@ -485,17 +457,21 @@ func EncriptToken(options map[string]interface{}) map[string]interface{} {
 }
 
 // SendMessage sends an SMS using Africa's Talking API
-func SendMessage(options SMSOptions) map[string]interface{} {
-	if len(options.To) == 0 || strings.TrimSpace(options.Message) == "" {
+func SendMessage(options map[string]interface{}) map[string]interface{} {
+	// Validate token field
+	message := options["message"].(string)
+	toRaw, toOk := options["to"]
+	toSlice, ok := toRaw.([]string)
+	if !toOk || !ok || len(toSlice) == 0 || strings.TrimSpace(message) == "" {
 		return map[string]interface{}{
 			"Success": false,
-			"Message": "both 'to' and 'message' are required and cannot be empty",
+			"Message": "both 'to' and 'message' are required and must be valid",
 		}
 	}
 	formData := url.Values{}
 	formData.Set("username", os.Getenv("AFRICAS_TALKING_USERNAME"))
-	formData.Set("to", strings.Join(options.To, ","))
-	formData.Set("message", options.Message)
+	formData.Set("to", strings.Join(toSlice, ","))
+	formData.Set("message", message)
 	formData.Set("from", os.Getenv("AFRICAS_TALKING_SENDER_ID"))
 
 	req, err := http.NewRequest("POST", "https://api.africastalking.com/version1/messaging", strings.NewReader(formData.Encode()))
@@ -562,8 +538,10 @@ func SendMessage(options SMSOptions) map[string]interface{} {
 	}
 	return map[string]interface{}{
 		"Success": true,
-		"Message": parsedResponse.SMSMessageData.Message,
-		"Data":    parsedResponse,
+		"": map[string]interface{}{
+			"status": "",
+			"data":   parsedResponse,
+		},
 	}
 }
 
@@ -622,7 +600,6 @@ func SendMail(options map[string]interface{}) map[string]interface{} {
 	if html == "" {
 		html = fmt.Sprintf("<h2>%s</h2>", msg)
 	}
-
 	// Required environment variables
 	sender := os.Getenv("MAIL_SENDER")
 	host := os.Getenv("MAIL_HOST")
