@@ -77,6 +77,7 @@ func GenerateOTP() map[string]interface{} {
 	}()
 	const otpCharset = "0123456789"
 	const otpLength = 6
+	numberGroups := otpLength / 2 // Integer division
 	otp := make([]byte, otpLength)
 	for i := range otp {
 		num, err := rand.Int(rand.Reader, big.NewInt(int64(len(otpCharset))))
@@ -84,17 +85,22 @@ func GenerateOTP() map[string]interface{} {
 			log.Println("Error generating secure OTP:", err)
 			return map[string]interface{}{
 				"success": false,
-				"message": "Failed to generate secure OTP",
-				"otp":     nil,
+				"message": map[string]interface{}{
+					"status": "Failed to generate secure OTP",
+					"otp":    nil,
+				},
 			}
 		}
 		otp[i] = otpCharset[num.Int64()]
 	}
-	otp_formated := string(otp[:3]) + "-" + string(otp[3:])
+	otpFormatted := string(otp[:numberGroups]) + "-" + string(otp[numberGroups:])
+
 	return map[string]interface{}{
 		"success": true,
-		"message": "OTP generated successfully",
-		"otp":     otp_formated,
+		"message": map[string]interface{}{
+			"status": "OTP generated successfully",
+			"otp":    otpFormatted,
+		},
 	}
 }
 
