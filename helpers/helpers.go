@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
+	"math/big"
 	"strconv"
 	"strings"
 	"time"
@@ -89,11 +91,9 @@ func BinToHex(binaryStr string) string {
 	n, _ := strconv.ParseInt(binaryStr, 2, 64)
 	return strings.ToUpper(fmt.Sprintf("%X", n))
 }
-
 func HexToBytes(hexStr string) ([]byte, error) {
 	return hex.DecodeString(hexStr)
 }
-
 func BinStrToBytes(binStr string) []byte {
 	// Pad to multiple of 8 bits
 	for len(binStr)%8 != 0 {
@@ -106,7 +106,6 @@ func BinStrToBytes(binStr string) []byte {
 	}
 	return bytes
 }
-
 func BytesToBinStr(data []byte) string {
 	var result strings.Builder
 	for _, b := range data {
@@ -145,7 +144,6 @@ func GenerateDecoderKey() map[string]interface{} {
 		"message": dataBlock,
 	}
 }
-
 func CalculateCRC16(data []byte) map[string]interface{} {
 	crc := 0xFFFF
 	for _, b := range data {
@@ -164,7 +162,35 @@ func CalculateCRC16(data []byte) map[string]interface{} {
 		"message": fmt.Sprintf("%016b", crc),
 	}
 }
-
+func EncodeUnits(units float64) map[string]interface{} {
+	const maxAmount = 65530.0
+	if units < 0 {
+		return map[string]interface{}{
+			"success": false,
+			"message": "units value containing Negative values is not supported.",
+		}
+	}
+	if units > maxAmount {
+		return map[string]interface{}{
+			"success": false,
+			"message": "units value too large to be represented.",
+		}
+	}
+	number := int(units)
+	decimal := int(math.Round((units - float64(number)) * 100))
+	numberBin := DecToBin(number, 16)     // 16 bits integer part
+	decimalBin := DecToBin(decimal, 7)    // 7 bits decimal part
+	amountBlock := numberBin + decimalBin // 23 bits total
+	return map[string]interface{}{
+		"success": true,
+		"message": amountBlock,
+		//map[string]string{
+		//"number":       numberBin,
+		//"decimal":      decimalBin,
+		//"amount_block": amountBlock,
+		//},
+	}
+}
 func DecodeUnits(packedBin string) map[string]interface{} {
 	if len(packedBin) != 23 {
 		return map[string]interface{}{
@@ -198,6 +224,120 @@ func DecodeUnits(packedBin string) map[string]interface{} {
 	}
 }
 
+// Encrypt3DES encrypts 8 bytes of data using a 24-byte 3DES key.
+func Encrypt3DES(data, key []byte) map[string]interface{} {
+	if len(data) != 8 {
+		return map[string]interface{}{
+			"success": false,
+			"message": "data must be 8 bytes for 3DES",
+		}
+	}
+	if len(key) != 24 {
+		return map[string]interface{}{
+			"success": false,
+			"message": "key must be 24 bytes for 3DES",
+		}
+	}
+	cipherBlock, err := des.NewTripleDESCipher(key)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": err.Error(),
+		}
+	}
+	encrypted := make([]byte, 8)
+	cipherBlock.Encrypt(encrypted, data)
+	return map[string]interface{}{
+		"success": true,
+		"message": encrypted,
+	}
+}
+
+// GenerateClassBits generates 2-bit class bits based on the token class integer (0-3).
+func GenerateClassBits(class int) map[string]interface{} {
+	if class < 0 || class > 3 {
+		return map[string]interface{}{
+			"success": false,
+			"message": "class must be between 0 and 3",
+		}
+	}
+	classBits := DecToBin(class, 2)
+	return map[string]interface{}{
+		"success": true,
+		"message": classBits,
+	}
+}
+
+// TranspositionAndAddClassBits inserts the 2 class bits into the token binary string at positions 28 and 27.
+// tokenBin must 64 bits.
+func TranspositionAndAddClassBits(tokenBin, classBits string) map[string]interface{} {
+
+	if len(tokenBin) < 64 {
+		return map[string]interface{}{
+			"success": false,
+			"message": "token binary must be at least 64 bits",
+		}
+	}
+	if len(classBits) != 2 {
+		return map[string]interface{}{
+			"success": false,
+			"message": "classBits must be exactly 2 bits",
+		}
+	}
+
+	// Prepend class bits to the token binary
+	withClassBits := classBits + tokenBin
+	bits := strings.Split(withClassBits, "")
+	length := len(bits)
+
+	if length < 66 {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Input token block must be at least 66 bits after prepending class bits",
+		}
+	}
+
+	// Perform the bit swaps (transposition)
+	// Swap pos28 and 65, 27 and 64
+	bits[length-1-65] = bits[length-1-28]
+	bits[length-1-64] = bits[length-1-27]
+	bits[length-1-28] = string(classBits[0])
+	bits[length-1-27] = string(classBits[1])
+
+	return map[string]interface{}{
+		"success": true,
+		"message": strings.Join(bits, ""),
+	}
+}
+
+// FormatTokenDisplay formats a binary token string into groups for display, grouping every 8 bits separated by a space.
+func FormatTokenDisplay(tokenBin string) map[string]interface{} {
+	// Convert binary string to integer
+	n := new(big.Int)
+	_, ok := n.SetString(tokenBin, 2)
+	if !ok {
+		return map[string]interface{}{
+			"success": false,
+			"message": "invalid binary token",
+		}
+	}
+
+	// Format to 20-digit string with leading zeros if needed
+	tokenStr := fmt.Sprintf("%020s", n.String())
+
+	// Split into 5 groups of 4 digits
+	var parts []string
+	for i := 0; i < len(tokenStr); i += 4 {
+		parts = append(parts, tokenStr[i:i+4])
+	}
+
+	// Join with hyphens
+	formattedToken := strings.Join(parts, "-")
+	return map[string]interface{}{
+		"success": true,
+		"message": formattedToken,
+	}
+}
 func Decrypt3DES(data, key []byte) map[string]interface{} {
 	if len(data) != 8 {
 		return map[string]interface{}{
@@ -225,7 +365,6 @@ func Decrypt3DES(data, key []byte) map[string]interface{} {
 		"message": decrypted,
 	}
 }
-
 func TranspositionAndRemoveClassBits(tokenBin string) map[string]interface{} {
 	if len(tokenBin) < 66 {
 		return map[string]interface{}{
@@ -267,4 +406,27 @@ func IsAllDigits(s string) bool {
 		}
 	}
 	return true
+}
+
+// GenerateRandomBits returns a random binary string of specified length as "message".
+func GenerateRandomBits(length int) map[string]interface{} {
+	if length <= 0 {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Length must be positive.",
+		}
+	}
+	max := new(big.Int).Lsh(big.NewInt(1), uint(length)) // 2^length
+	n, err := rand.Int(rand.Reader, max)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Random generation failed: " + err.Error(),
+		}
+	}
+	binStr := fmt.Sprintf("%0*b", length, n) // binary zero-padded to length
+	return map[string]interface{}{
+		"success": true,
+		"message": binStr,
+	}
 }

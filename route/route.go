@@ -18,6 +18,18 @@ func SetupRouter(router *gin.Engine) {
 				"message": "Backend MySQL API application router is working",
 			})
 		})
+		//this router encript -token
+		routes.GET("/encript-token", func(c *gin.Context) {
+			amount := c.Query("amount")
+			result := controllers.EncriptToken(map[string]interface{}{
+				"amount": amount,
+			})
+			if success, ok := result["success"].(bool); ok && success {
+				c.JSON(http.StatusOK, result)
+			} else {
+				c.JSON(http.StatusInternalServerError, result)
+			}
+		})
 		// This route decript-token
 		routes.GET("/decript-token", func(c *gin.Context) {
 			token := c.Query("token")

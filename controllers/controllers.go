@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -162,10 +163,8 @@ func DecriptToken(options map[string]interface{}) map[string]interface{} {
 			"message": keyRes["message"].(string),
 		}
 	}
-
 	keyBin := keyRes["message"].(string)
 	keyBytes := helpers.BinStrToBytes(keyBin)
-
 	// Perform transposition and extract class bits
 	tokRes := helpers.TranspositionAndRemoveClassBits(tokenBin)
 	if !tokRes["success"].(bool) {
@@ -183,7 +182,6 @@ func DecriptToken(options map[string]interface{}) map[string]interface{} {
 			"message": "Token block must be at least 64 bits.",
 		}
 	}
-
 	// Decrypt the first 64-bit block (8 bytes)
 	encBytes := helpers.BinStrToBytes(restored[:64])
 	decRes := helpers.Decrypt3DES(encBytes, keyBytes)
@@ -194,7 +192,6 @@ func DecriptToken(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 	decBytes := decRes["message"].([]byte)
-
 	// Parse decrypted binary string
 	binStr := helpers.BytesToBinStr(decBytes)
 	if len(binStr) < 64 {
@@ -207,7 +204,6 @@ func DecriptToken(options map[string]interface{}) map[string]interface{} {
 	tidBlock := binStr[3:25]
 	amtBlock := binStr[25:48]
 	crcBlock := binStr[48:64]
-
 	//fmt.Println("amtBlock:", amtBlock)
 	//fmt.Println("tidBlock:", tidBlock)
 	//fmt.Println("binStr:", binStr)
@@ -247,7 +243,6 @@ func DecriptToken(options map[string]interface{}) map[string]interface{} {
 			"message": "CRC mismatch - invalid token data",
 		}
 	}
-
 	// Time validations
 	// Parse timestamp (in minutes since base date)
 	tidMinutes, err := strconv.ParseInt(tidBlock, 2, 64)
@@ -259,18 +254,24 @@ func DecriptToken(options map[string]interface{}) map[string]interface{} {
 	}
 	timeNow := time.Now()
 	// Assuming you have parsed tidMinutes from earlier as int64
+	// Calculate issue time from BaseDate and tidMinutes
 	issueTime := helpers.BaseDate.Add(time.Duration(tidMinutes) * time.Minute)
 
-	if timeNow.Sub(issueTime) > 365*24*time.Hour {
+	// Calculate expiry time (1 year after issue time)
+	expiryTime := issueTime.AddDate(1, 0, 0)
+
+	// Check if the token is expired
+	if timeNow.After(expiryTime) {
 		return map[string]interface{}{
 			"success": false,
-			"message": "Token expired",
+			"message": "Token issue date has expired",
 		}
 	}
+	// Check if the issue time is invalid (before BaseDate or too far in the future)
 	if issueTime.Before(helpers.BaseDate) || issueTime.After(timeNow.Add(24*time.Hour)) {
 		return map[string]interface{}{
 			"success": false,
-			"message": "Change meter base date",
+			"message": "update Change meter base date for",
 		}
 	}
 	// Decode units block (23 bits)
@@ -282,10 +283,6 @@ func DecriptToken(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 	units := unitsRes["message"]
-	// Calculate timesx
-	//issueTime := helpers.BaseDate.Add(time.Duration(tidMinutes) * time.Minute)
-	expiryTime := issueTime.AddDate(1, 0, 0)
-
 	// Assemble result
 	result := map[string]interface{}{
 		"crc":                helpers.BinStrToDecimal(crcBlock),
@@ -301,6 +298,183 @@ func DecriptToken(options map[string]interface{}) map[string]interface{} {
 	return map[string]interface{}{
 		"success": true,
 		"message": result,
+	}
+}
+
+// encript token
+func EncriptToken(options map[string]interface{}) map[string]interface{} {
+	// Validate required fields
+	amountRaw, ok := options["amount"]
+	if !ok {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Amount field is required.",
+		}
+	}
+	// First, assert that amountRaw is a string
+	amountStr, ok := amountRaw.(string)
+	if !ok {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Amount must be a string.",
+		}
+	}
+	// Then parse the string to float64
+	amountNumber, err := strconv.ParseFloat(amountStr, 64)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Amount must be a valid number.",
+		}
+	}
+	// Use amountNumber as needed
+	amount := math.Floor(amountNumber*100) / 100
+	// Use current time or provided time
+	issueTime := time.Now()
+	if t, ok := options["issued_time"]; ok {
+		if tStr, ok := t.(string); ok {
+			parsedTime, err := time.Parse(time.RFC3339, tStr)
+			if err == nil {
+				issueTime = parsedTime
+			}
+		}
+	}
+	// Calculate TID (minutes since base date)
+	tidMinutes := int64(issueTime.Sub(helpers.BaseDate).Minutes())
+	tidBin := fmt.Sprintf("%022b", tidMinutes)
+
+	// Encode units (amount → binary string of 23 bits)
+	amtRes := helpers.EncodeUnits(amount)
+	if !amtRes["success"].(bool) {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Failed to encode units: " + amtRes["message"].(string),
+		}
+	}
+	amtBlock := amtRes["message"].(string)
+
+	// Generate 3-bit random block
+	randRes := helpers.GenerateRandomBits(3)
+	if !randRes["success"].(bool) {
+		// handle error here
+	}
+	randomBits := randRes["message"].(string)
+	// Construct binary string: random(3) + tid(22) + amount(23) = 48 bits
+	dataBin := randomBits + tidBin + amtBlock
+
+	// Convert to hex for CRC
+	dataHex := helpers.BinToHex(dataBin)
+	if len(dataHex) < 14 {
+		dataHex = fmt.Sprintf("%014s", dataHex)
+	}
+	dataBytes, err := helpers.HexToBytes(dataHex)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Failed to convert data to bytes: " + err.Error(),
+		}
+	}
+
+	// Calculate CRC16 on first 48 bits
+	crcRes := helpers.CalculateCRC16(dataBytes)
+	if !crcRes["success"].(bool) {
+		return map[string]interface{}{
+			"success": false,
+			"message": "CRC16 calculation failed: " + crcRes["message"].(string),
+		}
+	}
+	crcBin := crcRes["message"].(string)
+	if len(crcBin) < 16 {
+		crcBin = fmt.Sprintf("%016s", crcBin)
+	}
+
+	// Full binary block (64-bit)
+	fullBin := dataBin + crcBin
+
+	// Convert to byte array
+	fullBytes := helpers.BinStrToBytes(fullBin)
+
+	// Generate decoder key
+	keyRes := helpers.GenerateDecoderKey()
+	if !keyRes["success"].(bool) {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Failed to generate decoder key: " + keyRes["message"].(string),
+		}
+	}
+	keyBin := keyRes["message"].(string)
+	keyBytes := helpers.BinStrToBytes(keyBin)
+
+	// Encrypt with 3DES
+	encRes := helpers.Encrypt3DES(fullBytes, keyBytes)
+	if !encRes["success"].(bool) {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Encryption failed: " + encRes["message"].(string),
+		}
+	}
+	encBytes := encRes["message"].([]byte)
+
+	// Convert encrypted bytes to binary string
+	encBin := helpers.BytesToBinStr(encBytes)
+	if len(encBin) < 64 {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Encrypted binary is less than 64 bits.",
+		}
+	}
+
+	// Add class bits (assume class provided in options or default to 0)
+	classInt := 0
+	if c, ok := options["class"]; ok {
+		if cInt, ok := c.(int); ok {
+			classInt = cInt
+		} else if cFloat, ok := c.(float64); ok {
+			classInt = int(cFloat)
+		}
+	}
+	classBitsRes := helpers.GenerateClassBits(classInt)
+	if !classBitsRes["success"].(bool) {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Failed to generate class bits: " + classBitsRes["message"].(string),
+		}
+	}
+	classBits := classBitsRes["message"].(string)
+
+	// Apply transposition
+	transpositionRes := helpers.TranspositionAndAddClassBits(encBin, classBits)
+	if !transpositionRes["success"].(bool) {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Failed in transposition: " + transpositionRes["message"].(string),
+		}
+	}
+	finalBin := transpositionRes["message"].(string)
+	// Format for display (e.g. spaced groups)
+	tokenResponce := helpers.FormatTokenDisplay(finalBin)
+	if !tokenResponce["success"].(bool) {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Failed to format token display: " + tokenResponce["message"].(string),
+		}
+	}
+	token := tokenResponce["message"].(string)
+
+	// Return response
+	return map[string]interface{}{
+		"success": true,
+		"message": map[string]interface{}{
+			//"token":         tokenStr,
+			"token":            token,
+			"issued_date":      issueTime.Format(time.RFC3339),
+			"expired_datetime": issueTime.AddDate(1, 0, 0).Format(time.RFC3339),
+			"identifier":       tidMinutes,
+			"units":            amount,
+			"random_bits":      randomBits,
+			"class_bits":       classBits,
+			"crc_block":        crcBin,
+		},
 	}
 }
 
