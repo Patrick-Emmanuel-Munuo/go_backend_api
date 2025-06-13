@@ -205,7 +205,7 @@ func GenerateDecoderKey() map[string]interface{} {
 		supplyGroupCode   = 12345                // 16 bits
 		tariffIndex       = 3                    // 8 bits
 		decoderRefNumber  = uint64(123456789012) // 64 bits
-		random            = 12345678             // 72 bits
+		//random            = 12345678             // 72 bits
 	)
 
 	keyTypeBin := DecToBin(key_type, 8)                        // 8 bits
@@ -213,9 +213,9 @@ func GenerateDecoderKey() map[string]interface{} {
 	tariffIndexBin := DecToBin(tariffIndex, 8)                 // 8 bits
 	keyRevisionBin := DecToBin(keyRevisionNumber, 8)           // 8 bits
 	decoderRefNumberBin := DecToBin(int(decoderRefNumber), 64) // 64 bits
-	padding := DecToBin(random, 72)
+	//padding := DecToBin(random, 72)
 	// Build data block by concatenating all bits
-	dataBlock := keyTypeBin + supplyGroupBin + tariffIndexBin + keyRevisionBin + decoderRefNumberBin + padding
+	dataBlock := keyTypeBin + supplyGroupBin + tariffIndexBin + keyRevisionBin + decoderRefNumberBin
 	fmt.Println("DataBlock: ", dataBlock)
 	fmt.Println("dataBlock length:  ", len(dataBlock)) // Should be 16+8+16+8+8+64 = 120 bits
 	if len(dataBlock) != 192 {
