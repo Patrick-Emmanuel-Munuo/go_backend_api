@@ -109,33 +109,229 @@ func SetupRouter(router *gin.Engine) {
 	// Example of MySQL routes (commented for now)
 	mysql := router.Group("/api/mysql")
 	{
-		mysql.GET("/backup", func(c *gin.Context) {
-			backup, err := controllers.Backup()
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{
+		mysql.POST("/read", func(c *gin.Context) {
+			var options map[string]interface{}
+			if err := c.ShouldBindJSON(&options); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
 					"success": false,
-					"message": err.Error(),
+					"message": "Invalid JSON body",
 				})
 				return
 			}
-			c.JSON(http.StatusOK, backup)
+			response := controllers.Read(options)
+			status := http.StatusInternalServerError
+			if success, ok := response["success"].(bool); ok && success {
+				status = http.StatusOK
+			}
+			c.JSON(status, response)
 		})
-		mysql.POST("/read", controllers.Read)
-		mysql.POST("/search", controllers.Search)
-		mysql.POST("/create", controllers.Create)
-		//mysql.POST("/delete", controllers.Delete) // Uncomment if you want to enable delete functionality
-		mysql.POST("/update", controllers.Update)
-		// New pagination / listing routes
-		mysql.POST("/list", controllers.List)
-		mysql.POST("/list-all", controllers.ListAll)
-
-		// New bulk operation routes
-		mysql.POST("/create-bulk", controllers.CreateBulk)
-		mysql.POST("/update-bulk", controllers.UpdateBulk)
-
-		// Other utility routes
-		mysql.POST("/count", controllers.Count)
-		mysql.POST("/query", controllers.Query)
-		mysql.POST("/search-between", controllers.SearchBetween)
+		mysql.POST("/read-bulk", func(c *gin.Context) {
+			var options []map[string]interface{}
+			if err := c.ShouldBindJSON(&options); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"message": "Invalid JSON body",
+				})
+				return
+			}
+			response := controllers.ReadBulk(options)
+			status := http.StatusInternalServerError
+			if success, ok := response["success"].(bool); ok && success {
+				status = http.StatusOK
+			}
+			c.JSON(status, response)
+		})
+		mysql.POST("/list", func(c *gin.Context) {
+			var options map[string]interface{}
+			if err := c.ShouldBindJSON(&options); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"message": "Invalid JSON body",
+				})
+				return
+			}
+			response := controllers.List(options)
+			status := http.StatusInternalServerError
+			if success, ok := response["success"].(bool); ok && success {
+				status = http.StatusOK
+			}
+			c.JSON(status, response)
+		})
+		mysql.POST("/list-all", func(c *gin.Context) {
+			var options map[string]interface{}
+			if err := c.ShouldBindJSON(&options); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"message": "Invalid JSON body",
+				})
+				return
+			}
+			response := controllers.ListAll(options)
+			status := http.StatusInternalServerError
+			if success, ok := response["success"].(bool); ok && success {
+				status = http.StatusOK
+			}
+			c.JSON(status, response)
+		})
+		mysql.POST("/update", func(c *gin.Context) {
+			var options map[string]interface{}
+			if err := c.ShouldBindJSON(&options); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"message": "Invalid JSON body",
+				})
+				return
+			}
+			response := controllers.Update(options)
+			status := http.StatusInternalServerError
+			if success, ok := response["success"].(bool); ok && success {
+				status = http.StatusOK
+			}
+			c.JSON(status, response)
+		})
+		mysql.POST("/update-bulk", func(c *gin.Context) {
+			var options []map[string]interface{}
+			if err := c.ShouldBindJSON(&options); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"message": "Invalid JSON body",
+				})
+				return
+			}
+			response := controllers.UpdateBulk(options)
+			status := http.StatusInternalServerError
+			if success, ok := response["success"].(bool); ok && success {
+				status = http.StatusOK
+			}
+			c.JSON(status, response)
+		})
+		mysql.POST("/create", func(c *gin.Context) {
+			var options map[string]interface{}
+			if err := c.ShouldBindJSON(&options); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"message": "Invalid JSON body",
+				})
+				return
+			}
+			response := controllers.Create(options)
+			status := http.StatusInternalServerError
+			if success, ok := response["success"].(bool); ok && success {
+				status = http.StatusOK
+			}
+			c.JSON(status, response)
+		})
+		mysql.POST("/create-bulk", func(c *gin.Context) {
+			var options map[string]interface{}
+			if err := c.ShouldBindJSON(&options); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"message": "Invalid JSON body",
+				})
+				return
+			}
+			response := controllers.CreateBulk(options)
+			status := http.StatusInternalServerError
+			if success, ok := response["success"].(bool); ok && success {
+				status = http.StatusOK
+			}
+			c.JSON(status, response)
+		})
+		mysql.POST("/delete", func(c *gin.Context) {
+			var options map[string]interface{}
+			if err := c.ShouldBindJSON(&options); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"message": "Invalid JSON body",
+				})
+				return
+			}
+			response := controllers.Delete(options)
+			status := http.StatusInternalServerError
+			if success, ok := response["success"].(bool); ok && success {
+				status = http.StatusOK
+			}
+			c.JSON(status, response)
+		})
+		mysql.POST("/delete-bulk", func(c *gin.Context) {
+			var options []map[string]interface{}
+			if err := c.ShouldBindJSON(&options); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"message": "Invalid JSON body",
+				})
+				return
+			}
+			response := controllers.DelateBulk(options)
+			status := http.StatusInternalServerError
+			if success, ok := response["success"].(bool); ok && success {
+				status = http.StatusOK
+			}
+			c.JSON(status, response)
+		})
+		mysql.POST("/search", func(c *gin.Context) {
+			var options map[string]interface{}
+			if err := c.ShouldBindJSON(&options); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"message": "Invalid JSON body",
+				})
+				return
+			}
+			response := controllers.Search(options)
+			status := http.StatusInternalServerError
+			if success, ok := response["success"].(bool); ok && success {
+				status = http.StatusOK
+			}
+			c.JSON(status, response)
+		})
+		mysql.POST("/search-between", func(c *gin.Context) {
+			var options map[string]interface{}
+			if err := c.ShouldBindJSON(&options); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"message": "Invalid JSON body",
+				})
+				return
+			}
+			response := controllers.SearchBetween(options)
+			status := http.StatusInternalServerError
+			if success, ok := response["success"].(bool); ok && success {
+				status = http.StatusOK
+			}
+			c.JSON(status, response)
+		})
+		mysql.POST("/count", func(c *gin.Context) {
+			var options map[string]interface{}
+			if err := c.ShouldBindJSON(&options); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"message": "Invalid JSON body",
+				})
+				return
+			}
+			response := controllers.Count(options)
+			status := http.StatusInternalServerError
+			if success, ok := response["success"].(bool); ok && success {
+				status = http.StatusOK
+			}
+			c.JSON(status, response)
+		})
+		mysql.POST("/backup", func(c *gin.Context) {
+			var options map[string]interface{}
+			if err := c.ShouldBindJSON(&options); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"message": "Invalid JSON body",
+				})
+				return
+			}
+			response := controllers.Backup(options)
+			status := http.StatusInternalServerError
+			if success, ok := response["success"].(bool); ok && success {
+				status = http.StatusOK
+			}
+			c.JSON(status, response)
+		})
 	}
 }

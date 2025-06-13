@@ -6,16 +6,75 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"math"
 	"math/big"
 	"net"
+	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 )
 
-var BaseDate = time.Date(2025, 5, 5, 0, 0, 0, 0, time.UTC)
+var (
+	BaseDate         = time.Date(2025, 5, 5, 0, 0, 0, 0, time.UTC)
+	DatabaseHost     string
+	DatabaseUser     string
+	DatabasePassword string
+	DatabaseName     string
+	Mailsender       string
+	Mailhost         string
+	Mailusername     string
+	Mailpassword     string
+	Mailport         int
+)
+
+func UpdateEnvVars() {
+	DatabaseHost = os.Getenv("DATABASE_HOST")
+	DatabaseUser = os.Getenv("DATABASE_USER")
+	DatabasePassword = os.Getenv("DATABASE_PASSWORD")
+	DatabaseName = os.Getenv("DATABASE_NAME")
+	Mailsender = os.Getenv("MAIL_SENDER")
+	Mailhost = os.Getenv("MAIL_HOST")
+	Mailusername = os.Getenv("MAIL_ADDRESS")
+	Mailpassword = os.Getenv("MAIL_PASSWORD")
+	portStr := os.Getenv("MAIL_PORT")
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		log.Printf("Invalid MAIL_PORT value: %v", portStr)
+		port = 587 // default fallback
+	}
+	Mailport = port
+}
+
+func PrintEnvVars() {
+	fmt.Println("DatabaseHost:", DatabaseHost)
+	fmt.Println("DatabaseUser:", DatabaseUser)
+	fmt.Println("DatabasePassword:", DatabasePassword)
+	fmt.Println("DatabaseName:", DatabaseName)
+	fmt.Println("MailSender:", Mailsender)
+	fmt.Println("MailHost:", Mailhost)
+	fmt.Println("MailUsername:", Mailusername)
+	fmt.Println("MailPassword:", Mailpassword)
+	fmt.Println("MailPort:", Mailport)
+}
+
+func CleanupOldBackups(dir string, olderThan time.Duration) {
+	files, _ := ioutil.ReadDir(dir)
+	now := time.Now()
+	for _, file := range files {
+		if filepath.Ext(file.Name()) == ".sql" {
+			fullPath := filepath.Join(dir, file.Name())
+			if now.Sub(file.ModTime()) > olderThan {
+				os.Remove(fullPath)
+				log.Println("Deleted old backup:", fullPath)
+			}
+		}
+	}
+}
 
 // getServerIPAddress tries to find a non-loopback IP address
 func GetServerIPAddress() string {
@@ -23,7 +82,6 @@ func GetServerIPAddress() string {
 	if err != nil {
 		return "localhost"
 	}
-
 	for _, addr := range addrs {
 		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
 			if ipnet.IP.To4() != nil {
@@ -79,6 +137,16 @@ func UpdateSet(set map[string]interface{}) string {
 		parts = append(parts, key+" = ?")
 	}
 	return strings.Join(parts, ", ")
+}
+
+// SortedKeys returns keys of a map in sorted order
+func SortedKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // ---------- UTILITY HELPERS ----------
