@@ -151,6 +151,15 @@ func GenerateUniqueID() string {
 func DecToBin(n int, length int) string {
 	return fmt.Sprintf("%0*b", length, n)
 }
+func DecToBinBigInt(num *big.Int, length int) string {
+	binStr := num.Text(2) // binary string
+	if len(binStr) > length {
+		binStr = binStr[len(binStr)-length:] // truncate left bits
+	} else if len(binStr) < length {
+		binStr = fmt.Sprintf("%0*s", length, binStr) // pad left zeros
+	}
+	return binStr
+}
 
 // BinStrToDecimal converts a binary string to a decimal int64
 func BinStrToDecimal(binStr string) int64 {
@@ -191,22 +200,24 @@ func BytesToBinStr(data []byte) string {
 // ---------- ENCRYPTION / DECODING HELPERS ----------
 func GenerateDecoderKey() map[string]interface{} {
 	var (
-		key_type          = 21
-		supplyGroupCode   = 12345
-		tariffIndex       = 3
-		keyRevisionNumber = 0
-		decoderRefNumber  = uint64(1234567890)
-		secretKey         = 12345
-		additionalSeed    = 67890 // new part to pad up to 192 bits
+		key_type          = 0                    // 8 bits
+		keyRevisionNumber = 0                    // 8 bits
+		supplyGroupCode   = 12345                // 16 bits
+		tariffIndex       = 3                    // 8 bits
+		decoderRefNumber  = uint64(123456789012) // 64 bits
+		random            = 12345678             // 72 bits
 	)
-	keyTypeBin := DecToBin(key_type, 8)              // 8 bits
-	supplyGroupBin := DecToBin(supplyGroupCode, 16)  // 16 bits
-	tariffIndexBin := DecToBin(tariffIndex, 8)       // 8 bits
-	keyRevisionBin := DecToBin(keyRevisionNumber, 8) // 8 bits
-	drnBin := DecToBin(int(decoderRefNumber), 64)    // 64 bits
-	secretKeyBin := DecToBin(secretKey, 24)          // 24 bits
-	additionalBin := DecToBin(additionalSeed, 64)    // 64 bits — padding for 192 bits
-	dataBlock := keyTypeBin + supplyGroupBin + tariffIndexBin + keyRevisionBin + drnBin + secretKeyBin + additionalBin
+
+	keyTypeBin := DecToBin(key_type, 8)                        // 8 bits
+	supplyGroupBin := DecToBin(supplyGroupCode, 16)            // 16 bits
+	tariffIndexBin := DecToBin(tariffIndex, 8)                 // 8 bits
+	keyRevisionBin := DecToBin(keyRevisionNumber, 8)           // 8 bits
+	decoderRefNumberBin := DecToBin(int(decoderRefNumber), 64) // 64 bits
+	padding := DecToBin(random, 72)
+	// Build data block by concatenating all bits
+	dataBlock := keyTypeBin + supplyGroupBin + tariffIndexBin + keyRevisionBin + decoderRefNumberBin + padding
+	fmt.Println("DataBlock: ", dataBlock)
+	fmt.Println("dataBlock length:  ", len(dataBlock)) // Should be 16+8+16+8+8+64 = 120 bits
 	if len(dataBlock) != 192 {
 		return map[string]interface{}{
 			"success": false,
@@ -218,6 +229,28 @@ func GenerateDecoderKey() map[string]interface{} {
 		"message": dataBlock,
 	}
 }
+
+// LuhnCheckDigit calculates the Luhn check digit for a given number string
+func LuhnCheckDigit(number string) int {
+	sum := 0
+	alt := false
+	// Loop through the number in reverse
+	for i := len(number) - 1; i >= 0; i-- {
+		n, _ := strconv.Atoi(string(number[i]))
+		if alt {
+			n *= 2
+			if n > 9 {
+				n -= 9
+			}
+		}
+		sum += n
+		alt = !alt
+	}
+	// Compute the check digit
+	checkDigit := (10 - (sum % 10)) % 10
+	return checkDigit
+}
+
 func CalculateCRC16(data []byte) map[string]interface{} {
 	crc := 0xFFFF
 	for _, b := range data {
