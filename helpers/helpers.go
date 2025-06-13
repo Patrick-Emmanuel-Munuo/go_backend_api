@@ -50,18 +50,6 @@ func UpdateEnvVars() {
 	Mailport = port
 }
 
-func PrintEnvVars() {
-	fmt.Println("DatabaseHost:", DatabaseHost)
-	fmt.Println("DatabaseUser:", DatabaseUser)
-	fmt.Println("DatabasePassword:", DatabasePassword)
-	fmt.Println("DatabaseName:", DatabaseName)
-	fmt.Println("MailSender:", Mailsender)
-	fmt.Println("MailHost:", Mailhost)
-	fmt.Println("MailUsername:", Mailusername)
-	fmt.Println("MailPassword:", Mailpassword)
-	fmt.Println("MailPort:", Mailport)
-}
-
 func CleanupOldBackups(dir string, olderThan time.Duration) {
 	files, _ := ioutil.ReadDir(dir)
 	now := time.Now()

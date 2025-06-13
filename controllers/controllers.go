@@ -601,12 +601,7 @@ func SendMail(options map[string]interface{}) map[string]interface{} {
 		html = fmt.Sprintf("<h2>%s</h2>", msg)
 	}
 	// Required environment variables
-	sender := helpers.Mailsender
-	host := helpers.Mailhost
-	username := helpers.Mailusername
-	password := helpers.Mailpassword
-	port := helpers.Mailport
-	if sender == "" || host == "" || username == "" || password == "" || port == 0 {
+	if helpers.Mailsender == "" || helpers.Mailhost == "" || helpers.Mailusername == "" || helpers.Mailpassword == "" || helpers.Mailport == 0 {
 		return map[string]interface{}{
 			"success": false,
 			"message": "Missing required environment variables for SMTP configuration.",
@@ -614,7 +609,7 @@ func SendMail(options map[string]interface{}) map[string]interface{} {
 	}
 	// Compose the message
 	m := gomail.NewMessage()
-	m.SetHeader("From", sender)
+	m.SetHeader("From", helpers.Mailsender)
 	m.SetHeader("To", recipients...)
 	m.SetHeader("Subject", subject)
 	if cc, ok := options["CC"].([]string); ok && len(cc) > 0 {
@@ -639,7 +634,7 @@ func SendMail(options map[string]interface{}) map[string]interface{} {
 	}
 	// Configure SMTP
 	//d := gomail.NewDialer(host, port, username, password)
-	d := gomail.NewDialer(helpers.Mailhost, port, helpers.Mailusername, helpers.Mailpassword)
+	d := gomail.NewDialer(helpers.Mailhost, helpers.Mailport, helpers.Mailusername, helpers.Mailpassword)
 
 	// Send email
 	if err := d.DialAndSend(m); err != nil {
@@ -680,20 +675,20 @@ func Backup(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 	filePath := filepath.Join(publicDir, fileName)
-	mysqlHost := helpers.DatabaseHost
-	mysqlUser := helpers.DatabaseUser
-	mysqlPassword := helpers.DatabasePassword
-	mysqlDatabase := helpers.DatabaseName
-	if mysqlPassword == "" {
+	if helpers.DatabasePassword == "" {
 		log.Println("MYSQL_PASSWORD not set in environment or helpers")
 		return map[string]interface{}{
-			"success":   false,
-			"mysqlUser": mysqlUser,
-			"message":   "MySQL password not configured.",
+			"success": false,
+			"message": "MySQL password not configured.",
 		}
 	}
-	cmd := exec.Command("mysqldump", "-h", mysqlHost, "-u", mysqlUser, "-p"+mysqlPassword, mysqlDatabase)
-
+	//cmd := exec.Command("mysqldump", "-h", helpers.DatabaseHost, "-u", helpers.DatabaseUser, "-p"+helpers.DatabasePassword, helpers.DatabaseName)
+	cmd := exec.Command("mysqldump",
+		"-h", helpers.DatabaseHost,
+		"-u", helpers.DatabaseUser,
+		"-p"+helpers.DatabasePassword,
+		helpers.DatabaseName,
+	)
 	outfile, err := os.Create(filePath)
 	if err != nil {
 		log.Println("Failed to create dump file:", err)
@@ -712,7 +707,6 @@ func Backup(options map[string]interface{}) map[string]interface{} {
 			"message": err.Error(),
 		}
 	}
-	log.Println("Backup created:", filePath)
 	// Send backup via email
 	response := SendMail(map[string]interface{}{
 		"to":          email,
@@ -1799,3 +1793,78 @@ func Query(options map[string]interface{}) map[string]interface{} {
 		"message": results,
 	}
 }
+
+/*
+// file hanle
+var uploadPath = "./public"
+
+func UploadFile(c *gin.Context) map[string]interface{} {
+	file, err := c.FormFile("file")
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "File upload error",
+		}
+	}
+
+	os.MkdirAll(uploadPath, 0755)
+	dst := filepath.Join(uploadPath, filepath.Base(file.Filename))
+	if err := c.SaveUploadedFile(file, dst); err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Unable to save file",
+		}
+	}
+
+	return map[string]interface{}{
+		"success":  true,
+		"message":  "File uploaded",
+		"filename": file.Filename,
+	}
+}
+
+func UploadMultipleFiles(c *gin.Context) map[string]interface{} {
+	form, err := c.MultipartForm()
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Invalid form",
+		}
+	}
+
+	files := form.File["files"]
+	os.MkdirAll(uploadPath, 0755)
+
+	var uploaded []string
+	for _, file := range files {
+		dst := filepath.Join(uploadPath, filepath.Base(file.Filename))
+		if err := c.SaveUploadedFile(file, dst); err != nil {
+			continue
+		}
+		uploaded = append(uploaded, file.Filename)
+	}
+
+	return map[string]interface{}{
+		"success":  true,
+		"message":  "Files uploaded",
+		"uploaded": uploaded,
+	}
+}
+
+
+func DeleteFile(c *gin.Context) map[string]interface{} {
+	filename := c.Param("filename")
+	fullPath := filepath.Join(uploadPath, filename)
+	if err := os.Remove(fullPath); err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Failed to delete file",
+		}
+	}
+	return map[string]interface{}{
+		"success": true,
+		"message": "File deleted",
+	}
+}
+
+*/

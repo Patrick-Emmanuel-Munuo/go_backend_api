@@ -30,7 +30,6 @@ func main() {
 	}
 	// Now environment variables are loaded, update the helpers vars if needed
 	helpers.UpdateEnvVars()
-	helpers.PrintEnvVars()
 	// Recover from panic (simulating try-catch)
 	defer func() {
 		if r := recover(); r != nil {

@@ -1,7 +1,10 @@
 package route
 
 import (
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"vartrick/controllers" // Assuming you'll have models for MySQL connection
 
@@ -334,4 +337,35 @@ func SetupRouter(router *gin.Engine) {
 			c.JSON(status, response)
 		})
 	}
+	files := router.Group("/api/files")
+	{
+		//files.POST("/upload", controllers.UploadFileHandler)
+		//files.POST("/upload-multiple", controllers.UploadMultipleFilesHandler)
+		//files.GET("/download/:filename", controllers.DownloadFile)
+		files.GET("/download", func(c *gin.Context) {
+			filename := c.Query("file")
+			if filename == "" {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"success": false,
+					"message": "file name required in query",
+				})
+				return
+			}
+			fullPath := filepath.Join("./public", filename)
+			if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+				c.JSON(http.StatusOK, gin.H{
+					"success": false,
+					"message": "file name not found",
+				})
+				return
+			}
+			// Instead of returning map here, serve the file directly
+			c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+			c.Header("Content-Type", "application/octet-stream")
+			c.File(fullPath)
+			return // no JSON response because we sent file directly
+		})
+		//files.DELETE("/delete/:filename", controllers.DeleteFileHandler)
+	}
+
 }
