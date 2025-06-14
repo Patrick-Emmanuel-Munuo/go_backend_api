@@ -21,6 +21,11 @@ import (
 
 var (
 	BaseDate         = time.Date(2025, 5, 5, 0, 0, 0, 0, time.UTC)
+	ServerSecurity   string
+	ServerDomain     string
+	ServerPort       string
+	SslCertificate   string
+	SslKey           string
 	DatabaseHost     string
 	DatabaseUser     string
 	DatabasePassword string
@@ -33,21 +38,44 @@ var (
 )
 
 func UpdateEnvVars() {
-	DatabaseHost = os.Getenv("DATABASE_HOST")
-	DatabaseUser = os.Getenv("DATABASE_USER")
-	DatabasePassword = os.Getenv("DATABASE_PASSWORD")
-	DatabaseName = os.Getenv("DATABASE_NAME")
-	Mailsender = os.Getenv("MAIL_SENDER")
-	Mailhost = os.Getenv("MAIL_HOST")
-	Mailusername = os.Getenv("MAIL_ADDRESS")
-	Mailpassword = os.Getenv("MAIL_PASSWORD")
-	portStr := os.Getenv("MAIL_PORT")
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		log.Printf("Invalid MAIL_PORT value: %v", portStr)
-		port = 587 // default fallback
+	//security := os.Getenv("SECURITY") DOMAIN
+	ServerSecurity = getEnvValue("SECURITY", "http").(string)
+	ServerDomain = getEnvValue("DOMAIN", "localhost").(string)
+	ServerPort = getEnvValue("PORT", "2010").(string)
+	SslCertificate = getEnvValue("SSL_CERTIFICATE", "").(string)
+	SslKey = getEnvValue("SSL_KEY", "").(string)
+	DatabaseHost = getEnvValue("DATABASE_HOST", "localhost").(string)
+	DatabaseHost = getEnvValue("DATABASE_HOST", "localhost").(string)
+	DatabaseUser = getEnvValue("DATABASE_USER", "root").(string)
+	DatabasePassword = getEnvValue("DATABASE_PASSWORD", "").(string)
+	DatabaseName = getEnvValue("DATABASE_NAME", "trick").(string)
+	Mailsender = getEnvValue("MAIL_SENDER", "noreply@example.com").(string)
+	Mailhost = getEnvValue("MAIL_HOST", "smtp.example.com").(string)
+	Mailusername = getEnvValue("MAIL_ADDRESS", "noreply@example.com").(string)
+	Mailpassword = getEnvValue("MAIL_PASSWORD", "").(string)
+	Mailport = getEnvValue("MAIL_PORT", 587).(int)
+}
+
+func getEnvValue(key string, fallback interface{}) interface{} {
+	val := os.Getenv(key)
+	if val == "" {
+		log.Printf(`{"warning": "Environment variable %q not set, using default: %v"}`, key, fallback)
+		return fallback
 	}
-	Mailport = port
+	switch fallback.(type) {
+	case int:
+		intVal, err := strconv.Atoi(val)
+		if err != nil {
+			log.Printf(`{"warning": "Invalid int for %q: %q, using default: %v"}`, key, val, fallback)
+			return fallback
+		}
+		return intVal
+	case string:
+		return val
+	default:
+		log.Printf(`{"warning": "Unsupported type for key %q, using default: %v"}`, key, fallback)
+		return fallback
+	}
 }
 
 func CleanupOldBackups(dir string, olderThan time.Duration) {
@@ -68,16 +96,17 @@ func CleanupOldBackups(dir string, olderThan time.Duration) {
 func GetServerIPAddress() string {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
-		return "localhost"
+		return "127.0.0.1"
 	}
 	for _, addr := range addrs {
 		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				return ipnet.IP.String()
+			ip := ipnet.IP.To4()
+			if ip != nil && !ip.IsLoopback() && !strings.HasPrefix(ip.String(), "169.254.") {
+				return ip.String() // Return first non-loopback, non-link-local IPv4
 			}
 		}
 	}
-	return "localhost" // fallback
+	return "127.0.0.1" // fallback
 }
 
 // ---------- SQL HELPERS ----------

@@ -2,9 +2,7 @@ package main
 
 import (
 	"database/sql"
-	"io/ioutil"
 	"runtime"
-	"strings"
 
 	"fmt"
 	"log"
@@ -26,7 +24,7 @@ func main() {
 	// Load environment variables from .env file
 	err := godotenv.Load(".env")
 	if err != nil {
-		log.Println("Warning: No .env file found or failed to load")
+		log.Printf(`{"success": false, "message": "No .env file found or failed to load"}`)
 	}
 	// Now environment variables are loaded, update the helpers vars if needed
 	helpers.UpdateEnvVars()
@@ -39,20 +37,17 @@ func main() {
 	}()
 	// Use all CPU cores
 	runtime.GOMAXPROCS(runtime.NumCPU())
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "2010" // Default port
+	// Construct the full server URL hide port if(helpers.ServerSecurity == "https") and !helpers.SslCertificate == "" || !helpers.SslKey == ""
+	//url := fmt.Sprintf("%s://%s:%s", helpers.ServerSecurity, helpers.GetServerIPAddress(), helpers.ServerPort)
+	var server_url string
+	if helpers.ServerSecurity == "https" && helpers.SslCertificate != "" && helpers.SslKey != "" {
+		// Default HTTPS port 443 - hide port in URL
+		server_url = fmt.Sprintf("%s://%s", helpers.ServerSecurity, helpers.GetServerIPAddress())
+	} else {
+		// Show port for other cases
+		server_url = fmt.Sprintf("%s://%s:%s", helpers.ServerSecurity, helpers.GetServerIPAddress(), helpers.ServerPort)
 	}
-
-	security := os.Getenv("SECURITY")
-	if security == "" {
-		security = "https" // Default to HTTPS for deployed domain
-	}
-	domain := os.Getenv("DOMAIN") // e.g., vartrick.onrender.com
-
-	// Construct the full server URL
-	url := fmt.Sprintf("%s://%s", security, domain)
-	//gin.SetMode(gin.ReleaseMode)
+	gin.SetMode(gin.ReleaseMode)
 	router := gin.Default()
 
 	// Initialize and check the DB connection with JSON logging Initialize DB connection
@@ -82,51 +77,25 @@ func main() {
 		})
 	})
 
-	// Start the server http or https
-	certPEM := os.Getenv("SSL_CERTIFICATE")
-	keyPEM := os.Getenv("SSL_KEY")
-	// Replace literal \n with actual newlines if needed
-	certPEM = strings.ReplaceAll(certPEM, `\n`, "\n")
-	keyPEM = strings.ReplaceAll(keyPEM, `\n`, "\n")
-
-	if security == "https" {
-		// Create temp cert file
-		certFile, err := ioutil.TempFile("", "cert-*.pem")
-		if err != nil {
-			log.Fatalf("Failed to create temp cert file: %v", err)
-		}
-		defer os.Remove(certFile.Name())
-
-		// Write cert PEM to file
-		if _, err := certFile.Write([]byte(certPEM)); err != nil {
-			log.Fatalf("Failed to write cert file: %v", err)
-		}
-		certFile.Close()
-
-		// Create temp key file
-		keyFile, err := ioutil.TempFile("", "key-*.pem")
-		if err != nil {
-			log.Fatalf("Failed to create temp key file: %v", err)
-		}
-		defer os.Remove(keyFile.Name())
-
-		// Write key PEM to file
-		if _, err := keyFile.Write([]byte(keyPEM)); err != nil {
-			log.Fatalf("Failed to write key file: %v", err)
-		}
-		keyFile.Close()
-		if err := router.RunTLS(":"+port, certPEM, keyPEM); err != nil {
-			log.Printf(`{"success": false, "message": "Failed to start Gin HTTPS server", "error": "%v"}`, err)
-			os.Exit(1)
+	// Start the server with HTTP or HTTPS based on environment variable
+	var server_err error
+	if helpers.ServerSecurity == "https" {
+		if helpers.SslCertificate == "" || helpers.SslKey == "" {
+			log.Printf(`{"success": false, "message": "Ssl Certificate or Ssl Key environment variables are not set"}`)
+			log.Printf(`{"success": true, "message": "Starting Gin HTTP server on %s"}`, server_url)
+			server_err = router.Run(helpers.GetServerIPAddress() + ":" + helpers.ServerPort)
+		} else {
+			log.Printf(`{"success": true, "message": "Starting Gin HTTPS server on %s"}`, server_url)
+			server_err = router.RunTLS(helpers.GetServerIPAddress()+":443", helpers.SslCertificate, helpers.SslKey)
 		}
 	} else {
-		if err := router.Run(":" + port); err != nil {
-			log.Printf(`{"success": false, "message": "Failed to start Gin HTTP server", "error": "%v"}`, err)
-			os.Exit(1)
-		}
+		log.Printf(`{"success": true, "message": "Starting Gin HTTP server on %s"}`, server_url)
+		server_err = router.Run(helpers.GetServerIPAddress() + ":" + helpers.ServerPort)
 	}
-	log.Printf(`{"success": true, "message": "server is running on %v"}`, url)
-
+	if server_err != nil {
+		log.Printf(`{"success": false, "message": "Failed to start Gin server", "error": "%v"}`, server_err)
+		os.Exit(1)
+	}
 }
 
 // InitDBConnection establishes and checks the MySQL connection

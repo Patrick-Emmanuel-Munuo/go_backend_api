@@ -1,7 +1,22 @@
-# Go Application
-requirements:
-go get go.mongodb.org/mongo-driver
-go get gopkg.in/gomail.v2
+# SSL window power shell output 
+# Step 1: Ensure the output directory exists
+New-Item -ItemType Directory -Path .\configurations -Force
+# Step 2: Generate the certificate
+$cert = New-SelfSignedCertificate -Subject 'CN=169.254.110.224' -DnsName '169.254.110.224' -CertStoreLocation 'Cert:\LocalMachine\My' -KeyLength 2048 -NotAfter (Get-Date).AddYears(2) -KeyExportPolicy Exportable
+
+# Step 3: Secure the password
+$pwd = ConvertTo-SecureString -String 'Variable98@' -Force -AsPlainText
+
+# Step 4: Export the PFX file
+Export-PfxCertificate -Cert "Cert:\LocalMachine\My\$($cert.Thumbprint)" -FilePath .\configurations\server.pfx -Password $pwd
+
+# generate .pem files
+openssl pkcs12 -in configurations\server.pfx -clcerts -nokeys -out configurations\cert.pem -passin pass:Variable98@
+openssl pkcs12 -in configurations\server.pfx -nocerts -nodes -out configurations\key.pem -passin pass:Variable98@
+
+
+
+
 
 
 
