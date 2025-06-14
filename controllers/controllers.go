@@ -571,9 +571,8 @@ func SendMessageLocal(options map[string]interface{}) map[string]interface{} {
 			continue
 		}
 		time.Sleep(50 * time.Millisecond)
-
 		statusMap[phone] = "message sent"
-		log.Printf("Sent SMS to %s", phone)
+		//log.Printf("Sent SMS to %s", phone)
 		sentCount++
 	}
 
@@ -587,19 +586,18 @@ func SendMessageLocal(options map[string]interface{}) map[string]interface{} {
 
 		recipient := map[string]interface{}{
 			"cost":         "0",
-			"messageId":    helpers.GenerateUniqueID(), // your unique ID func
+			"message_id":   helpers.GenerateUniqueID(), // your unique ID func
 			"messageParts": "0",
 			"number":       phone,
 			"message":      messageRaw,
 			"method":       "local_via_moderm",
 			"status":       status,
+			"sender_id":    "+255760449295",
 			"statusCode":   statusCode,
 		}
 		recipients = append(recipients, recipient)
 	}
-
 	statusSummary := fmt.Sprintf("Sent to %d/%d Total Cost: %.2f", sentCount, len(toSlice), totalCost)
-
 	return map[string]interface{}{
 		"success": true,
 		"message": map[string]interface{}{
