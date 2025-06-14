@@ -50,6 +50,20 @@ func main() {
 	}
 	// Inject DB into controller package
 	controllers.SetDB(db)
+	/* Start SMS reader in background
+	go func() {
+		for {
+			response := controllers.ReadMessageLocal()
+			if success, ok := response["success"].(bool); ok && success {
+				log.Println(response["message"])
+				//log.Printf(`{"success": true, "message": "Connected to MySQL successfully"}`)
+			} else {
+				//fmt.Println("SMS read error:", response["message"])
+			}
+			time.Sleep(1 * time.Second) // Adjust polling interval
+		}
+	}()*/
+
 	// Basic welcome route
 	router.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{

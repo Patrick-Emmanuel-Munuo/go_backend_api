@@ -610,3 +610,55 @@ func XMLtoJSON(resp *http.Response) map[string]interface{} {
 		"message": result,
 	}
 }
+
+func ParseMessages(raw string) map[string]interface{} {
+	// Clean up the raw data like Node.js `.replace(/\r\n/g, '').trim()`
+	cleaned := strings.ReplaceAll(raw, "\r\n", "")
+	cleaned = strings.TrimSpace(cleaned)
+
+	if len(cleaned) < 20 {
+		//fmt.Println("No new SMS received or malformed message.")
+		return map[string]interface{}{
+			"success": false,
+			"message": "No new SMS or malformed data",
+		}
+	}
+
+	receiver := safeSlice(cleaned, 7, 20)
+	receiverAt := safeSlice(cleaned, 24, 44)
+	if receiverAt == "" {
+		receiverAt = time.Now().Format(time.RFC3339)
+	}
+	receiverText := safeSlice(cleaned, 45, len(cleaned))
+
+	messageID := GenerateUniqueID() // Or use uuid.New().String()
+
+	savedData := map[string]interface{}{
+		"message_id":    messageID,
+		"receiver":      receiver,
+		"receiver_at":   receiverAt,
+		"receiver_text": receiverText,
+		"created_at":    time.Now().Format(time.RFC3339),
+		"created_by":    "system",
+		"updated_at":    nil,
+		"updated_by":    nil,
+		"description":   nil,
+		"status":        "received",
+		"method":        "local_via_modem",
+	}
+	return map[string]interface{}{
+		"success": true,
+		"message": savedData,
+	}
+
+}
+func safeSlice(s string, start, end int) string {
+	runes := []rune(s)
+	if start >= len(runes) {
+		return ""
+	}
+	if end > len(runes) {
+		end = len(runes)
+	}
+	return string(runes[start:end])
+}

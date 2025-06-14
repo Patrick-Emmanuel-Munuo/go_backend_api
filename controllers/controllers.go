@@ -517,7 +517,7 @@ func SendMessageLocal(options map[string]interface{}) map[string]interface{} {
 	sentCount := 0
 	totalCost := 0.0 // pretend cost calculation
 
-	portName := "COM55" //"/dev/ttyUSB0" // or "COM3" on Windows
+	portName := "COM8" //"/dev/ttyUSB0" // or "COM3" on Windows
 	baudRate := 9600
 
 	mode := &serial.Mode{
@@ -590,6 +590,8 @@ func SendMessageLocal(options map[string]interface{}) map[string]interface{} {
 			"messageId":    helpers.GenerateUniqueID(), // your unique ID func
 			"messageParts": "0",
 			"number":       phone,
+			"message":      messageRaw,
+			"method":       "local_via_moderm",
 			"status":       status,
 			"statusCode":   statusCode,
 		}
@@ -607,26 +609,88 @@ func SendMessageLocal(options map[string]interface{}) map[string]interface{} {
 	}
 }
 
-func ReadMessageLocal(options map[string]interface{}) map[string]interface{} {
-	// Validate token field
-	message := options["message"].(string)
-	toRaw, toOk := options["to"]
-	toSlice, ok := toRaw.([]string)
-	if !toOk || !ok || len(toSlice) == 0 || strings.TrimSpace(message) == "" {
+func ReadMessageLocal() map[string]interface{} {
+	portName := "COM8"
+	baudRate := 9600
+	mode := &serial.Mode{
+		BaudRate: baudRate,
+		Parity:   serial.NoParity,
+		StopBits: serial.OneStopBit,
+	}
+	port, err := serial.Open(portName, mode)
+	if err != nil {
 		return map[string]interface{}{
 			"success": false,
-			"message": "both 'to' and 'message' are required and must be valid",
+			"message": fmt.Sprintf("Failed to open port %s: %v", portName, err),
 		}
 	}
+	defer port.Close()
 
+	// Set text mode
+	_, err = port.Write([]byte("AT+CMGF=1\r"))
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": fmt.Sprintf("Failed to set text mode: %v", err),
+		}
+	}
+	time.Sleep(200 * time.Millisecond)
+
+	// Request all messages
+	_, err = port.Write([]byte("AT+CNMI=1,2,0,0,0\r"))
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": fmt.Sprintf("Failed to request messages: %v", err),
+		}
+	}
+	time.Sleep(500 * time.Millisecond)
+
+	type readResult struct {
+		n   int
+		err error
+		buf []byte
+	}
+	buffer := make([]byte, 1024)
+	fullResponse := make([]byte, 0)
+
+readLoop:
+	for {
+		resultChan := make(chan readResult)
+		go func() {
+			n, err := port.Read(buffer)
+			resultChan <- readResult{n: n, err: err, buf: buffer[:n]}
+		}()
+		select {
+		case res := <-resultChan:
+			if res.err != nil {
+				break readLoop
+			}
+			if res.n == 0 {
+				break readLoop
+			}
+			fullResponse = append(fullResponse, res.buf...)
+			if res.n < len(buffer) {
+				break readLoop
+			}
+		case <-time.After(300 * time.Millisecond):
+			break readLoop
+		}
+	}
+	responseStr := string(fullResponse)
+	parsedMessages := helpers.ParseMessages(responseStr)
+	if parsedMessages["success"].(bool) {
+		return map[string]interface{}{
+			"success": true,
+			"message": parsedMessages["message"],
+		}
+	}
 	return map[string]interface{}{
-		"success": true,
-		"message": map[string]interface{}{
-			"status":     "message sent",
-			"recipients": "",
-		},
+		"success": false,
+		"message": parsedMessages["message"],
 	}
 }
+
 func SendMail(options map[string]interface{}) map[string]interface{} {
 	// Validate required fields
 	var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
