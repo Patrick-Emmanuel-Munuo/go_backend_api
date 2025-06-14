@@ -9,7 +9,6 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"math"
 	"math/big"
 	"net"
 	"net/http"
@@ -308,8 +307,9 @@ func CalculateCRC16(data []byte) map[string]interface{} {
 		"message": fmt.Sprintf("%016b", crc),
 	}
 }
-func EncodeUnits(units float64) map[string]interface{} {
+func EncodeUnits(amount float64) map[string]interface{} {
 	const maxAmount = 65530.0
+	units := amount + 0.00001
 	if units < 0 {
 		return map[string]interface{}{
 			"success": false,
@@ -323,10 +323,10 @@ func EncodeUnits(units float64) map[string]interface{} {
 		}
 	}
 	number := int(units)
-	decimal := int(math.Round((units - float64(number)) * 100))
-	log.Println("units: ", units)
-	log.Println("number: ", number)
-	log.Println("decimal: ", decimal)
+	decimal := int((units - float64(number)) * 100)
+	//log.Println("units:", units)
+	//log.Println("number: ", number)
+	//log.Println("decimal: ", decimal)
 	numberBin := DecToBin(number, 16)     // 16 bits integer part
 	decimalBin := DecToBin(decimal, 7)    // 7 bits decimal part
 	amountBlock := numberBin + decimalBin // 23 bits total

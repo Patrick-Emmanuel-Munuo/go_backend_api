@@ -287,8 +287,7 @@ func EncriptToken(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 	// Use amountNumber as needed
-	amount := float64(amountNumber*100) / 100
-	// Use current time or provided time
+	amount := amountNumber
 	issueTime := time.Now()
 	if t, ok := options["issued_time"]; ok {
 		if tStr, ok := t.(string); ok {
@@ -420,7 +419,7 @@ func EncriptToken(options map[string]interface{}) map[string]interface{} {
 			"expired_datetime": issueTime.AddDate(1, 0, 0).Format(time.RFC3339),
 			"identifier":       tidMinutes,
 			"units":            amount,
-			"unitsDecoded":     helpers.DecodeUnits(amtBlock),
+			"unitsDecoded":     helpers.DecodeUnits(amtBlock)["message"],
 			"random_bits":      randomBits,
 			"class_bits":       classBits,
 			"crc_block":        crcBin,
