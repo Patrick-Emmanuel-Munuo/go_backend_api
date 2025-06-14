@@ -38,18 +38,9 @@ func main() {
 	// Use all CPU cores
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	// Construct the full server URL hide port if(helpers.ServerSecurity == "https") and !helpers.SslCertificate == "" || !helpers.SslKey == ""
-	//url := fmt.Sprintf("%s://%s:%s", helpers.ServerSecurity, helpers.GetServerIPAddress(), helpers.ServerPort)
-	var server_url string
-	if helpers.ServerSecurity == "https" && helpers.SslCertificate != "" && helpers.SslKey != "" {
-		// Default HTTPS port 443 - hide port in URL
-		server_url = fmt.Sprintf("%s://%s", helpers.ServerSecurity, helpers.GetServerIPAddress())
-	} else {
-		// Show port for other cases
-		server_url = fmt.Sprintf("%s://%s:%s", helpers.ServerSecurity, helpers.GetServerIPAddress(), helpers.ServerPort)
-	}
+
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.Default()
-
 	// Initialize and check the DB connection with JSON logging Initialize DB connection
 	if err := InitDBConnection(); err != nil {
 		log.Printf(`{"success": false, "message": "Failed to connect to MySQL", "error": "%v"}`, err)
@@ -76,24 +67,38 @@ func main() {
 			"message": "Wrong route or requested method",
 		})
 	})
-
 	// Start the server with HTTP or HTTPS based on environment variable
-	var server_err error
+	var serverErr error
 	if helpers.ServerSecurity == "https" {
 		if helpers.SslCertificate == "" || helpers.SslKey == "" {
-			log.Printf(`{"success": false, "message": "Ssl Certificate or Ssl Key environment variables are not set"}`)
-			log.Printf(`{"success": true, "message": "Starting Gin HTTP server on %s"}`, server_url)
-			server_err = router.Run(helpers.GetServerIPAddress() + ":" + helpers.ServerPort)
+			log.Printf(`{"success": false, "message": "SSL Certificate or SSL Key environment variables are not set"}`)
+			Url := fmt.Sprintf("http://%s:%s", helpers.GetServerIPAddress(), helpers.ServerPort)
+			log.Printf(`{"success": true, "message": "Starting Gin HTTP server on %s"}`, Url)
+			serverErr = router.Run(helpers.GetServerIPAddress() + ":" + helpers.ServerPort)
 		} else {
-			log.Printf(`{"success": true, "message": "Starting Gin HTTPS server on %s"}`, server_url)
-			server_err = router.RunTLS(helpers.GetServerIPAddress()+":443", helpers.SslCertificate, helpers.SslKey)
+			Url := fmt.Sprintf("https://%s", helpers.GetServerIPAddress())
+			log.Printf(`{"success": true, "message": "Starting Gin HTTPS server on %s"}`, Url)
+			serverErr = router.RunTLS(helpers.GetServerIPAddress()+":443", helpers.SslCertificate, helpers.SslKey)
+
+			if serverErr != nil {
+				log.Printf(`{"success": false, "message": "Failed to start HTTPS server, fallback to HTTP", "error": "%v"}`, serverErr)
+
+				// Log fallback as HTTP correctly
+				fallbackURL := fmt.Sprintf("http://%s:%s", helpers.GetServerIPAddress(), helpers.ServerPort)
+				log.Printf(`{"success": true, "message": "Starting Gin HTTP server on %s"}`, fallbackURL)
+
+				serverErr = router.Run(helpers.GetServerIPAddress() + ":" + helpers.ServerPort)
+			}
 		}
 	} else {
-		log.Printf(`{"success": true, "message": "Starting Gin HTTP server on %s"}`, server_url)
-		server_err = router.Run(helpers.GetServerIPAddress() + ":" + helpers.ServerPort)
+		// Log fallback as HTTP correctly
+		fallbackURL := fmt.Sprintf("http://%s:%s", helpers.GetServerIPAddress(), helpers.ServerPort)
+		log.Printf(`{"success": true, "message": "Starting Gin HTTP server on %s"}`, fallbackURL)
+		serverErr = router.Run(helpers.GetServerIPAddress() + ":" + helpers.ServerPort)
 	}
-	if server_err != nil {
-		log.Printf(`{"success": false, "message": "Failed to start Gin server", "error": "%v"}`, server_err)
+
+	if serverErr != nil {
+		log.Printf(`{"success": false, "message": "Failed to start Gin server", "error": "%v"}`, serverErr)
 		os.Exit(1)
 	}
 }

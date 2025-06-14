@@ -2,9 +2,8 @@ package controllers
 
 import (
 	"crypto/rand"
-	"encoding/xml"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"math"
 	"math/big"
@@ -19,36 +18,10 @@ import (
 	"time"
 	"vartrick/helpers"
 
+	"github.com/clbanning/mxj"
 	"github.com/gin-gonic/gin"
 	"gopkg.in/gomail.v2"
 )
-
-//var db *sql.DB
-
-type Options struct {
-	Table       string                 `json:"table"`
-	Select      []string               `json:"select"`
-	Condition   map[string]interface{} `json:"condition"`
-	OrCondition map[string]interface{} `json:"or_condition"`
-}
-
-// AfricaTalkingXMLResponse is for parsing XML response from Africa's Talking
-type AfricaTalkingXMLResponse struct {
-	XMLName        xml.Name `xml:"AfricasTalkingResponse"`
-	SMSMessageData struct {
-		Message    string `xml:"Message"`
-		Recipients struct {
-			Recipient struct {
-				Number       string `xml:"number"`
-				Cost         string `xml:"cost"`
-				Status       string `xml:"status"`
-				StatusCode   string `xml:"statusCode"`
-				MessageID    string `xml:"messageId"`
-				MessageParts string `xml:"messageParts"`
-			} `xml:"Recipient"`
-		} `xml:"Recipients"`
-	} `xml:"SMSMessageData"`
-}
 
 // Generate OTP
 func GenerateOTP() map[string]interface{} {
@@ -503,7 +476,7 @@ func SendMessage(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return map[string]interface{}{
 			"Success": false,
@@ -513,36 +486,70 @@ func SendMessage(options map[string]interface{}) map[string]interface{} {
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		log.Printf("SMS send failed with status %d. Response body: %s\n", resp.StatusCode, string(body))
 		return map[string]interface{}{
-			"Success": false,
-			"Message": "SMS send failed. Please try again later.",
+			"success": false,
+			"message": "SMS send failed. Please try again later.",
 		}
 	}
-	// Parse XML response
-	var parsedResponse AfricaTalkingXMLResponse
-	err = xml.Unmarshal(body, &parsedResponse)
+	results, err := mxj.NewMapXmlReader(resp.Body)
 	if err != nil {
-		log.Printf("XML parse error: %v\n", err) // for internal logs
+		// handle failure
+		fmt.Println("fail to decode output: " + err.Error())
 		return map[string]interface{}{
-			"Success": false,
-			"Message": "Invalid response format from SMS provider.",
-		}
-	}
-	status := parsedResponse.SMSMessageData.Recipients.Recipient.Status
-	if status != "Success" {
-		log.Printf("SMS error: Status=%s, StatusCode=%s\n", status, parsedResponse.SMSMessageData.Recipients.Recipient.StatusCode)
-		return map[string]interface{}{
-			"Success": false,
-			"Message": "SMS not sent. Please try again later.",
-			//data: parsedResponse,
+			"success": false,
+			"message": "fail to decode output: " + err.Error(),
 		}
 	}
 	return map[string]interface{}{
 		"Success": true,
 		"": map[string]interface{}{
-			"status": "",
-			"data":   parsedResponse,
+			"status":   "",
+			"responce": results,
 		},
 	}
+	/*
+			// AfricaTalkingXMLResponse is for parsing XML response from Africa's Talking
+			type AfricaTalkingXMLResponse struct {
+				XMLName        xml.Name `xml:"AfricasTalkingResponse"`
+				SMSMessageData struct {
+					Message    string `xml:"Message"`
+					Recipients struct {
+						Recipient struct {
+							Number       string `xml:"number"`
+							Cost         string `xml:"cost"`
+							Status       string `xml:"status"`
+							StatusCode   string `xml:"statusCode"`
+							MessageID    string `xml:"messageId"`
+							MessageParts string `xml:"messageParts"`
+						} `xml:"Recipient"`
+					} `xml:"Recipients"`
+				} `xml:"SMSMessageData"`
+			}
+		// Parse XML response
+		//var parsedResponse AfricaTalkingXMLResponse
+		err = xml.Unmarshal(body)
+		if err != nil {
+			log.Printf("XML parse error: %v\n", err) // for internal logs
+			return map[string]interface{}{
+				"Success": false,
+				"Message": "Invalid response format from SMS provider.",
+			}
+		}
+		status := parsedResponse.SMSMessageData.Recipients.Recipient.Status
+		if status != "Success" {
+			log.Printf("SMS error: Status=%s, StatusCode=%s\n", status, parsedResponse.SMSMessageData.Recipients.Recipient.StatusCode)
+			return map[string]interface{}{
+				"Success": false,
+				"Message": "SMS not sent. Please try again later.",
+				//data: parsedResponse,
+			}
+		}
+		return map[string]interface{}{
+			"Success": true,
+			"": map[string]interface{}{
+				"status": "",
+				"data":   parsedResponse,
+			},
+		}*/
 }
 
 func SendMail(options map[string]interface{}) map[string]interface{} {
