@@ -64,6 +64,24 @@ func SetupRouter(router *gin.Engine) {
 			}
 		})
 		//send sms routers
+		routes.GET("/send-sms-local", func(c *gin.Context) {
+			to := c.Query("to")
+			message := c.Query("message")
+			if to == "" || message == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "'to' and 'message' query parameters are required"})
+				return
+			}
+			responce := controllers.SendMessageLocal(map[string]interface{}{
+				"to":      strings.Split(to, ","),
+				"message": message,
+			})
+			if success, ok := responce["success"].(bool); ok && success {
+				c.JSON(http.StatusOK, responce)
+			} else {
+				c.JSON(http.StatusInternalServerError, responce)
+			}
+		})
+		//send sms routers
 		routes.GET("/send-sms", func(c *gin.Context) {
 			to := c.Query("to")
 			message := c.Query("message")

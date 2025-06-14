@@ -18,6 +18,7 @@ import (
 	"vartrick/helpers"
 
 	"github.com/gin-gonic/gin"
+	serial "go.bug.st/serial.v1"
 	"gopkg.in/gomail.v2"
 )
 
@@ -435,8 +436,8 @@ func SendMessage(options map[string]interface{}) map[string]interface{} {
 	toSlice, ok := toRaw.([]string)
 	if !toOk || !ok || len(toSlice) == 0 || strings.TrimSpace(message) == "" {
 		return map[string]interface{}{
-			"Success": false,
-			"Message": "both 'to' and 'message' are required and must be valid",
+			"success": false,
+			"message": "both 'to' and 'message' are required and must be valid",
 		}
 	}
 	formData := url.Values{}
@@ -448,8 +449,8 @@ func SendMessage(options map[string]interface{}) map[string]interface{} {
 	req, err := http.NewRequest("POST", "https://api.africastalking.com/version1/messaging", strings.NewReader(formData.Encode()))
 	if err != nil {
 		return map[string]interface{}{
-			"Success": false,
-			"Message": fmt.Sprintf("failed to create request: %v", err),
+			"success": false,
+			"message": fmt.Sprintf("failed to create request: %v", err),
 		}
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -469,8 +470,8 @@ func SendMessage(options map[string]interface{}) map[string]interface{} {
 			userMessage = "connection to SMS service failed"
 		}
 		return map[string]interface{}{
-			"Success": false,
-			"Message": userMessage,
+			"success": false,
+			"message": userMessage,
 		}
 	}
 	defer resp.Body.Close()
@@ -502,6 +503,130 @@ func SendMessage(options map[string]interface{}) map[string]interface{} {
 	}
 }
 
+func SendMessageLocal(options map[string]interface{}) map[string]interface{} {
+	messageRaw, messageOk := options["message"].(string)
+	toRaw, toOk := options["to"]
+	toSlice, ok := toRaw.([]string)
+	if !messageOk || !toOk || !ok || len(toSlice) == 0 || strings.TrimSpace(messageRaw) == "" {
+		return map[string]interface{}{
+			"success": false,
+			"message": "both 'to' and 'message' are required and must be valid",
+		}
+	}
+	recipients := []map[string]interface{}{}
+	sentCount := 0
+	totalCost := 0.0 // pretend cost calculation
+
+	portName := "COM55" //"/dev/ttyUSB0" // or "COM3" on Windows
+	baudRate := 9600
+
+	mode := &serial.Mode{
+		BaudRate: baudRate,
+		Parity:   serial.NoParity,
+		StopBits: serial.OneStopBit,
+	}
+	port, err := serial.Open(portName, mode)
+	if err != nil {
+		ports, err := serial.GetPortsList()
+		if err != nil {
+			log.Fatalf("Error listing serial ports: %v", err)
+		}
+		return map[string]interface{}{
+			"success": false,
+			"ports":   ports,
+			"message": fmt.Sprintf("failed to open port %s: %v", portName, err),
+		}
+	}
+	defer port.Close()
+
+	_, err = port.Write([]byte("AT+CMGF=1\r"))
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": fmt.Sprintf("failed to set text mode: %v", err),
+		}
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	statusMap := make(map[string]string)
+
+	for _, phone := range toSlice {
+		_, err := port.Write([]byte(fmt.Sprintf("AT+CMGS=\"%s\"\r", phone)))
+		if err != nil {
+			statusMap[phone] = "failed to initiate send command"
+			continue
+		}
+		time.Sleep(50 * time.Millisecond)
+
+		_, err = port.Write([]byte(messageRaw + "\r"))
+		if err != nil {
+			statusMap[phone] = "failed to write message text"
+			continue
+		}
+		time.Sleep(50 * time.Millisecond)
+
+		_, err = port.Write([]byte{26})
+		if err != nil {
+			statusMap[phone] = "failed to send message terminator"
+			continue
+		}
+		time.Sleep(50 * time.Millisecond)
+
+		statusMap[phone] = "message sent"
+		log.Printf("Sent SMS to %s", phone)
+		sentCount++
+	}
+
+	for _, phone := range toSlice {
+		status, exists := statusMap[phone]
+		statusCode := "200"
+		if !exists || status != "message sent" {
+			status = "InvalidPhoneNumber"
+			statusCode = "403"
+		}
+
+		recipient := map[string]interface{}{
+			"cost":         "0",
+			"messageId":    helpers.GenerateUniqueID(), // your unique ID func
+			"messageParts": "0",
+			"number":       phone,
+			"status":       status,
+			"statusCode":   statusCode,
+		}
+		recipients = append(recipients, recipient)
+	}
+
+	statusSummary := fmt.Sprintf("Sent to %d/%d Total Cost: %.2f", sentCount, len(toSlice), totalCost)
+
+	return map[string]interface{}{
+		"success": true,
+		"message": map[string]interface{}{
+			"status":     statusSummary,
+			"recipients": recipients,
+		},
+	}
+}
+
+func ReadMessageLocal(options map[string]interface{}) map[string]interface{} {
+	// Validate token field
+	message := options["message"].(string)
+	toRaw, toOk := options["to"]
+	toSlice, ok := toRaw.([]string)
+	if !toOk || !ok || len(toSlice) == 0 || strings.TrimSpace(message) == "" {
+		return map[string]interface{}{
+			"success": false,
+			"message": "both 'to' and 'message' are required and must be valid",
+		}
+	}
+
+	return map[string]interface{}{
+		"success": true,
+		"message": map[string]interface{}{
+			"status":     "message sent",
+			"recipients": "",
+		},
+	}
+}
 func SendMail(options map[string]interface{}) map[string]interface{} {
 	// Validate required fields
 	var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
