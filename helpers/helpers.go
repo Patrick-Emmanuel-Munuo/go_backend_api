@@ -1,6 +1,7 @@
 package helpers
 
 import (
+	"bytes"
 	"crypto/des"
 	"crypto/rand"
 	"encoding/hex"
@@ -18,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/clbanning/mxj"
 )
 
 var (
@@ -36,6 +39,9 @@ var (
 	Mailusername     string
 	Mailpassword     string
 	Mailport         int
+	SmsUserName      string
+	SmsApiKey        string
+	SmsSenderId      string
 )
 
 func UpdateEnvVars() {
@@ -55,6 +61,9 @@ func UpdateEnvVars() {
 	Mailusername = getEnvValue("MAIL_ADDRESS", "noreply@example.com").(string)
 	Mailpassword = getEnvValue("MAIL_PASSWORD", "").(string)
 	Mailport = getEnvValue("MAIL_PORT", 587).(int)
+	SmsUserName = getEnvValue("AFRICAS_TALKING_USERNAME", "").(string)
+	SmsApiKey = getEnvValue("AFRICAS_TALKING_API_KEY", "").(string)
+	SmsSenderId = getEnvValue("AFRICAS_TALKING_SENDER_ID", "").(string)
 }
 
 func getEnvValue(key string, fallback interface{}) interface{} {
@@ -315,6 +324,9 @@ func EncodeUnits(units float64) map[string]interface{} {
 	}
 	number := int(units)
 	decimal := int(math.Round((units - float64(number)) * 100))
+	log.Println("units: ", units)
+	log.Println("number: ", number)
+	log.Println("decimal: ", decimal)
 	numberBin := DecToBin(number, 16)     // 16 bits integer part
 	decimalBin := DecToBin(decimal, 7)    // 7 bits decimal part
 	amountBlock := numberBin + decimalBin // 23 bits total
@@ -570,18 +582,31 @@ func GenerateRandomBits(length int) map[string]interface{} {
 
 // convert xml to json
 func XMLtoJSON(resp *http.Response) map[string]interface{} {
-
-	var jsonData map[string]interface{}
-	err := ""
-	if err != "" {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
 		return map[string]interface{}{
 			"success": false,
-			"message": "fail to parse json: " + err,
+			"message": "failed to read response body: " + err.Error(),
 		}
 	}
+	// Close the body after reading
+	resp.Body.Close()
+	// Convert []byte to io.Reader for mxj
+	reader := bytes.NewReader(body)
+	// Parse XML to map[string]interface{}
+	data, err := mxj.NewMapXmlReader(reader)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "failed to parse XML: " + err.Error(),
+		}
+	}
+	// Convert mxj.Map to map[string]interface{}
+	result := map[string]interface{}(data)
 
+	// Assume data is already parsed from XML and stored in a variable like this:
 	return map[string]interface{}{
 		"success": true,
-		"message": jsonData,
+		"message": result,
 	}
 }

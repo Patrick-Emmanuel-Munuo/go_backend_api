@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -18,7 +17,6 @@ import (
 	"time"
 	"vartrick/helpers"
 
-	"github.com/clbanning/mxj"
 	"github.com/gin-gonic/gin"
 	"gopkg.in/gomail.v2"
 )
@@ -289,7 +287,7 @@ func EncriptToken(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 	// Use amountNumber as needed
-	amount := math.Floor(amountNumber*100) / 100
+	amount := float64(amountNumber*100) / 100
 	// Use current time or provided time
 	issueTime := time.Now()
 	if t, ok := options["issued_time"]; ok {
@@ -422,6 +420,7 @@ func EncriptToken(options map[string]interface{}) map[string]interface{} {
 			"expired_datetime": issueTime.AddDate(1, 0, 0).Format(time.RFC3339),
 			"identifier":       tidMinutes,
 			"units":            amount,
+			"unitsDecoded":     helpers.DecodeUnits(amtBlock),
 			"random_bits":      randomBits,
 			"class_bits":       classBits,
 			"crc_block":        crcBin,
@@ -442,10 +441,10 @@ func SendMessage(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 	formData := url.Values{}
-	formData.Set("username", os.Getenv("AFRICAS_TALKING_USERNAME"))
+	formData.Set("username", helpers.SmsUserName)
 	formData.Set("to", strings.Join(toSlice, ","))
 	formData.Set("message", message)
-	formData.Set("from", os.Getenv("AFRICAS_TALKING_SENDER_ID"))
+	formData.Set("from", helpers.SmsSenderId)
 
 	req, err := http.NewRequest("POST", "https://api.africastalking.com/version1/messaging", strings.NewReader(formData.Encode()))
 	if err != nil {
@@ -455,7 +454,7 @@ func SendMessage(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("apiKey", os.Getenv("AFRICAS_TALKING_API_KEY"))
+	req.Header.Set("apiKey", helpers.SmsApiKey)
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -476,80 +475,32 @@ func SendMessage(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return map[string]interface{}{
-			"Success": false,
-			"Message": "failed to read response body",
-		}
-	}
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		log.Printf("SMS send failed with status %d. Response body: %s\n", resp.StatusCode, string(body))
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		log.Printf("SMS send failed with status %d. Response body: %s\n", resp.StatusCode, string(bodyBytes))
 		return map[string]interface{}{
 			"success": false,
 			"message": "SMS send failed. Please try again later.",
 		}
 	}
-	results, err := mxj.NewMapXmlReader(resp.Body)
-	if err != nil {
-		// handle failure
-		fmt.Println("fail to decode output: " + err.Error())
+	// Use helper function to convert XML response body to JSON map
+	result := helpers.XMLtoJSON(resp)
+	if success, ok := result["success"].(bool); ok && success {
+		data := result["message"].(map[string]interface{})
+		results := data["AfricasTalkingResponse"].(map[string]interface{})["SMSMessageData"].(map[string]interface{})
+		return map[string]interface{}{
+			"success": true,
+			"message": map[string]interface{}{
+				"status":     results["Message"],
+				"recipients": results["Recipients"].(map[string]interface{})["Recipient"],
+			},
+		}
+	} else {
 		return map[string]interface{}{
 			"success": false,
-			"message": "fail to decode output: " + err.Error(),
+			"message": result["message"],
 		}
 	}
-	return map[string]interface{}{
-		"Success": true,
-		"": map[string]interface{}{
-			"status":   "",
-			"responce": results,
-		},
-	}
-	/*
-			// AfricaTalkingXMLResponse is for parsing XML response from Africa's Talking
-			type AfricaTalkingXMLResponse struct {
-				XMLName        xml.Name `xml:"AfricasTalkingResponse"`
-				SMSMessageData struct {
-					Message    string `xml:"Message"`
-					Recipients struct {
-						Recipient struct {
-							Number       string `xml:"number"`
-							Cost         string `xml:"cost"`
-							Status       string `xml:"status"`
-							StatusCode   string `xml:"statusCode"`
-							MessageID    string `xml:"messageId"`
-							MessageParts string `xml:"messageParts"`
-						} `xml:"Recipient"`
-					} `xml:"Recipients"`
-				} `xml:"SMSMessageData"`
-			}
-		// Parse XML response
-		//var parsedResponse AfricaTalkingXMLResponse
-		err = xml.Unmarshal(body)
-		if err != nil {
-			log.Printf("XML parse error: %v\n", err) // for internal logs
-			return map[string]interface{}{
-				"Success": false,
-				"Message": "Invalid response format from SMS provider.",
-			}
-		}
-		status := parsedResponse.SMSMessageData.Recipients.Recipient.Status
-		if status != "Success" {
-			log.Printf("SMS error: Status=%s, StatusCode=%s\n", status, parsedResponse.SMSMessageData.Recipients.Recipient.StatusCode)
-			return map[string]interface{}{
-				"Success": false,
-				"Message": "SMS not sent. Please try again later.",
-				//data: parsedResponse,
-			}
-		}
-		return map[string]interface{}{
-			"Success": true,
-			"": map[string]interface{}{
-				"status": "",
-				"data":   parsedResponse,
-			},
-		}*/
 }
 
 func SendMail(options map[string]interface{}) map[string]interface{} {
