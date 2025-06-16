@@ -88,11 +88,11 @@ func main() {
 			log.Printf(`{"success": false, "message": "SSL Certificate or SSL Key environment variables are not set"}`)
 			Url := fmt.Sprintf("http://%s:%s", helpers.GetServerIPAddress(), helpers.ServerPort)
 			log.Printf(`{"success": true, "message": "Starting Gin HTTP server on %s"}`, Url)
-			serverErr = router.Run(helpers.GetServerIPAddress() + ":" + helpers.ServerPort)
+			serverErr = router.Run(":" + helpers.ServerPort)
 		} else {
 			Url := fmt.Sprintf("https://%s", helpers.GetServerIPAddress())
 			log.Printf(`{"success": true, "message": "Starting Gin HTTPS server on %s"}`, Url)
-			serverErr = router.RunTLS(helpers.GetServerIPAddress()+":443", helpers.SslCertificate, helpers.SslKey)
+			serverErr = router.RunTLS(":443", helpers.SslCertificate, helpers.SslKey)
 
 			if serverErr != nil {
 				log.Printf(`{"success": false, "message": "Failed to start HTTPS server, fallback to HTTP", "error": "%v"}`, serverErr)
@@ -101,14 +101,14 @@ func main() {
 				fallbackURL := fmt.Sprintf("http://%s:%s", helpers.GetServerIPAddress(), helpers.ServerPort)
 				log.Printf(`{"success": true, "message": "Starting Gin HTTP server on %s"}`, fallbackURL)
 
-				serverErr = router.Run(helpers.GetServerIPAddress() + ":" + helpers.ServerPort)
+				serverErr = router.Run(":" + helpers.ServerPort)
 			}
 		}
 	} else {
 		// Log fallback as HTTP correctly
 		fallbackURL := fmt.Sprintf("http://%s:%s", helpers.GetServerIPAddress(), helpers.ServerPort)
 		log.Printf(`{"success": true, "message": "Starting Gin HTTP server on %s"}`, fallbackURL)
-		serverErr = router.Run(helpers.GetServerIPAddress() + ":" + helpers.ServerPort)
+		serverErr = router.Run(":" + helpers.ServerPort)
 	}
 
 	if serverErr != nil {
