@@ -24,10 +24,37 @@ func SetupRouter(router *gin.Engine) {
 		})
 		//get server time /server/time
 		routes.GET("/server/time", func(c *gin.Context) {
-			currentTime := time.Now().Format("2006-01-02 15:04:05") // standard Go time format
+			now := time.Now()
+			zone, offset := now.Zone()
 			message := map[string]interface{}{
-				"time":   currentTime,
-				"status": "server time retrieved successfully",
+				"local_time":      now.Format("2006-01-02 15:04:05"),       // local time
+				"utc_time":        now.UTC().Format("2006-01-02 15:04:05"), // UTC time
+				"iso8601_time":    now.Format(time.RFC3339),                // ISO 8601 format
+				"timezone":        zone,
+				"timezone_offset": offset,     // in seconds
+				"unix_timestamp":  now.Unix(), // UNIX timestamp
+				"status":          "server time retrieved successfully",
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"message": message,
+			})
+		})
+		//get client data,ip adress,....etc
+		routes.GET("/client", func(c *gin.Context) {
+			clientIP := c.ClientIP()
+			userAgent := c.Request.UserAgent()
+			// You can also grab other headers if needed
+			acceptLang := c.GetHeader("Accept-Language")
+			referer := c.GetHeader("Referer")
+
+			message := map[string]interface{}{
+				"ip_address":     clientIP,
+				"user_agent":     userAgent,
+				"accept_lang":    acceptLang,
+				"referer":        referer,
+				"request_path":   c.Request.URL.Path,
+				"request_method": c.Request.Method,
 			}
 			c.JSON(http.StatusOK, gin.H{
 				"success": true,
