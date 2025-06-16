@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"vartrick/controllers" // Assuming you'll have models for MySQL connection
 
 	"github.com/gin-gonic/gin"
@@ -21,6 +22,19 @@ func SetupRouter(router *gin.Engine) {
 				"message": "Backend MySQL API application router is working",
 			})
 		})
+		//get server time /server/time
+		routes.GET("/server/time", func(c *gin.Context) {
+			currentTime := time.Now().Format("2006-01-02 15:04:05") // standard Go time format
+			message := map[string]interface{}{
+				"time":   currentTime,
+				"status": "server time retrieved successfully",
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"message": message,
+			})
+		})
+
 		//this router encript -token
 		routes.GET("/encript-token", func(c *gin.Context) {
 			amount := c.Query("amount")
