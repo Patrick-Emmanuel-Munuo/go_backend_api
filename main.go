@@ -42,9 +42,9 @@ func main() {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.Default()
 	// Initialize and check the DB connection with JSON logging Initialize DB connection
-	if err := InitDBConnection(); err != nil {
-		log.Printf(`{"success": false, "message": "Failed to connect to MySQL", "error": "%v"}`, err)
-		//os.Exit(1)
+	result := InitDBConnection()
+	if !result["success"].(bool) {
+		log.Printf(`{"success": false, "message": "%s"}`, result["message"])
 	} else {
 		log.Printf(`{"success": true, "message": "Connected to MySQL successfully"}`)
 	}
@@ -118,17 +118,25 @@ func main() {
 }
 
 // InitDBConnection establishes and checks the MySQL connection
-func InitDBConnection() error {
+func InitDBConnection() map[string]interface{} {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 		helpers.DatabaseUser, helpers.DatabasePassword, helpers.DatabaseHost, helpers.DatabaseName)
-
 	var err error
 	db, err = sql.Open("mysql", dsn)
 	if err != nil {
-		return fmt.Errorf("failed to connect to MySQL: %w", err)
+		return map[string]interface{}{
+			"success": false,
+			"message": fmt.Sprintf("Failed to connect to MySQL: %v", err),
+		}
 	}
-	if err := db.Ping(); err != nil {
-		return fmt.Errorf("failed to ping MySQL: %w", err)
+	if err = db.Ping(); err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": fmt.Sprintf("Failed to ping MySQL: %v", err),
+		}
 	}
-	return nil
+	return map[string]interface{}{
+		"success": true,
+		"message": "MySQL connection established successfully",
+	}
 }

@@ -1857,29 +1857,27 @@ func Count(options map[string]interface{}) map[string]interface{} {
 
 // Query executes a raw SQL query and returns the results
 func Query(options map[string]interface{}) map[string]interface{} {
-	// Validate query name
-	query_data, ok := options["query"]
+	// Validate query input
+	queryRaw, ok := options["query"]
 	if !ok {
 		return map[string]interface{}{
 			"success": false,
-			"message": "query name is required",
+			"message": "Query is required",
 		}
 	}
-	query_name, ok := query_data.(string)
-	if !ok || query_name == "" {
+	queryStr, ok := queryRaw.(string)
+	if !ok || queryStr == "" {
 		return map[string]interface{}{
 			"success": false,
-			"message": "Invalid query name",
+			"message": "Invalid query string",
 		}
 	}
+	// Optional: Get query params
 	var params []interface{}
-
-	// Build query
-	query := fmt.Sprintf(query_name)
-
-	// Execute query
-	//db.Query(options.Query)
-	rows, err := db.Query(query, params...)
+	if p, ok := options["params"].([]interface{}); ok {
+		params = p
+	}
+	rows, err := db.Query(queryStr, params...)
 	if err != nil {
 		return map[string]interface{}{
 			"success": false,
@@ -1907,24 +1905,17 @@ func Query(options map[string]interface{}) map[string]interface{} {
 				"message": err.Error(),
 			}
 		}
-		rowMap := make(map[string]interface{})
+		row := make(map[string]interface{})
 		for i, col := range columns {
 			val := columnPointers[i].(*interface{})
-			rowMap[col] = *val
-		}
-		results = append(results, rowMap)
-	}
-	// Convert []uint8 (MySQL bytes) to string for JSON compatibility
-	for i, row := range results {
-		newRow := make(map[string]interface{})
-		for k, v := range row {
-			if byteVal, ok := v.([]uint8); ok {
-				newRow[k] = string(byteVal)
-			} else {
-				newRow[k] = v
+			switch v := (*val).(type) {
+			case []byte:
+				row[col] = string(v)
+			default:
+				row[col] = v
 			}
 		}
-		results[i] = newRow
+		results = append(results, row)
 	}
 	if len(results) == 0 {
 		return map[string]interface{}{
