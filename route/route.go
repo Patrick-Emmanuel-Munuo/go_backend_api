@@ -88,7 +88,10 @@ func SetupRouter(router *gin.Engine) {
 		})
 		// This route generates a one-time password (OTP) for testing purposes
 		routes.GET("/generate-otp", func(c *gin.Context) {
-			result := controllers.GenerateOTP()
+			length := c.Query("length")
+			result := controllers.GenerateOTP(map[string]interface{}{
+				"length": length,
+			})
 			if success, ok := result["success"].(bool); ok && success {
 				c.JSON(http.StatusOK, result)
 			} else {
@@ -97,7 +100,15 @@ func SetupRouter(router *gin.Engine) {
 		})
 		//This route generates and send otp one-time password (OTP) for testing purposes
 		routes.GET("/send-otp", func(c *gin.Context) {
-			result := controllers.GenerateOTP()
+			length := c.Query("length")
+			email := c.Query("email")
+			phone := c.Query("phone")
+
+			result := controllers.SendOTP(map[string]interface{}{
+				"length": length,
+				"email":  email,
+				"phone":  phone,
+			})
 			if success, ok := result["success"].(bool); ok && success {
 				c.JSON(http.StatusOK, result)
 			} else {

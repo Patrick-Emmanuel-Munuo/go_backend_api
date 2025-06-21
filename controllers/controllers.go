@@ -17,23 +17,31 @@ import (
 	"time"
 	"vartrick/helpers"
 
-	"github.com/gin-gonic/gin"
 	serial "go.bug.st/serial.v1"
 	"gopkg.in/gomail.v2"
 )
 
 // Generate OTP
-func GenerateOTP() map[string]interface{} {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Println("Recovered from panic in GenerateOTP:", r)
+func GenerateOTP(options map[string]interface{}) map[string]interface{} {
+	// Default OTP length
+	otpLength := 6
+	// Check if custom length is provided and valid
+	if lenVal, ok := options["length"]; ok {
+		switch v := lenVal.(type) {
+		case int:
+			if v > 0 {
+				otpLength = v
+			}
+		case string:
+			if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+				otpLength = parsed
+			}
 		}
-	}()
+	}
 	const otpCharset = "0123456789"
-	const otpLength = 6
-	numberGroups := otpLength / 2 // Integer division
 	otp := make([]byte, otpLength)
-	for i := range otp {
+
+	for i := 0; i < otpLength; i++ {
 		num, err := rand.Int(rand.Reader, big.NewInt(int64(len(otpCharset))))
 		if err != nil {
 			log.Println("Error generating secure OTP:", err)
@@ -47,8 +55,9 @@ func GenerateOTP() map[string]interface{} {
 		}
 		otp[i] = otpCharset[num.Int64()]
 	}
-	otpFormatted := string(otp[:numberGroups]) + "-" + string(otp[numberGroups:])
-
+	// Format: Split in half if even length; otherwise just return as is
+	var otpFormatted string
+	otpFormatted = string(otp)
 	return map[string]interface{}{
 		"success": true,
 		"message": map[string]interface{}{
@@ -59,21 +68,105 @@ func GenerateOTP() map[string]interface{} {
 }
 
 // send OTP via either mail or phone
-func SendOTP(c *gin.Context) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Println("Recovered from panic in SendOTP:", r)
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "Internal server error"})
+func SendOTP(options map[string]interface{}) map[string]interface{} {
+	otpLength := 4
+	// Handle OTP length
+	if lenVal, ok := options["length"]; ok {
+		switch v := lenVal.(type) {
+		case int:
+			if v > 0 {
+				otpLength = v
+			}
+		case string:
+			if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+				otpLength = parsed
+			}
 		}
-	}()
-	otp := GenerateOTP()
-	if !otp["success"].(bool) {
-		c.JSON(http.StatusInternalServerError, otp)
-		return
 	}
-	// Here you would typically send the OTP via email or SMS
-	log.Println("Generated OTP:", otp["otp"])
-	c.JSON(http.StatusOK, otp)
+	// Generate OTP
+	result := GenerateOTP(map[string]interface{}{
+		"length": otpLength,
+	})
+	// Check if generation was successful
+	if success, ok := result["success"].(bool); ok && success {
+		msgData, ok := result["message"].(map[string]interface{})
+		if !ok {
+			return map[string]interface{}{
+				"success": false,
+				"message": "OTP generation response format error",
+				"error":   result,
+			}
+		}
+		otpCode, ok := msgData["otp"].(string)
+		message := fmt.Sprintf(
+			"Dear user,\n\nYour One-Time Password (OTP) is: %s\n\n"+
+				"Please use this code to complete your verification. "+
+				"Thank you,",
+			otpCode,
+		)
+		if !ok {
+			return map[string]interface{}{
+				"success": false,
+				"message": "OTP value missing",
+				"error":   result,
+			}
+		}
+		var emailStatus, phoneStatus map[string]interface{}
+		// Send via email
+		if emailVal, ok := options["email"]; ok {
+			if email, ok := emailVal.(string); ok && email != "" {
+				emailStatus = SendMail(map[string]interface{}{
+					"to":      email,
+					"message": message,
+					"subject": "Your One-Time Password (OTP)",
+				})
+			} else {
+				emailStatus = map[string]interface{}{
+					"success": false,
+					"message": "Invalid email format",
+				}
+			}
+		} else {
+			emailStatus = map[string]interface{}{
+				"success": false,
+				"message": "Email not provided",
+			}
+		}
+		// Send via phone
+		if phoneVal, ok := options["phone"]; ok {
+			if phone, ok := phoneVal.(string); ok && phone != "" {
+				phoneStatus = SendMessage(map[string]interface{}{
+					"to":      phone,
+					"message": message,
+				})
+			} else {
+				phoneStatus = map[string]interface{}{
+					"success": false,
+					"message": "Invalid phone format",
+				}
+			}
+		} else {
+			phoneStatus = map[string]interface{}{
+				"success": false,
+				"message": "Phone number not provided",
+			}
+		}
+		return map[string]interface{}{
+			"success": true,
+			"message": map[string]interface{}{
+				"status": "OTP generated and sent successfully",
+				"otp":    message,
+				"email":  emailStatus,
+				"phone":  phoneStatus,
+			},
+		}
+	}
+	// OTP generation failed
+	return map[string]interface{}{
+		"success": false,
+		"message": "Failed to generate or send OTP",
+		"error":   result,
+	}
 }
 
 // decript token
@@ -735,7 +828,7 @@ func SendMail(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 	// Subject fallback
-	subject, _ := options["Subject"].(string)
+	subject, _ := options["subject"].(string)
 	if subject == "" {
 		subject = msg
 	}
