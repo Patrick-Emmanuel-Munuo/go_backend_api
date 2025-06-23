@@ -119,8 +119,13 @@ func main() {
 
 // InitDBConnection establishes and checks the MySQL connection
 func InitDBConnection() map[string]interface{} {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		helpers.DatabaseUser, helpers.DatabasePassword, helpers.DatabaseHost, helpers.DatabaseName)
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+		helpers.DatabaseUser,
+		helpers.DatabasePassword,
+		helpers.DatabaseHost,
+		helpers.DatabasePort,
+		helpers.DatabaseName,
+	)
 	var err error
 	db, err = sql.Open("mysql", dsn)
 	if err != nil {

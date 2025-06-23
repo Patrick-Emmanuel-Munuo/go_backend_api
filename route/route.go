@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 	"vartrick/controllers" // Assuming you'll have models for MySQL connection
+	"vartrick/helpers"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,11 +20,11 @@ func SetupRouter(router *gin.Engine) {
 		routes.GET("/", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
 				"success": true,
-				"message": "Backend MySQL API application router is working",
+				"message": "Backend API application router is working",
 			})
 		})
 		//get server time /server/time
-		routes.GET("/server/time", func(c *gin.Context) {
+		routes.GET("/time", func(c *gin.Context) {
 			now := time.Now()
 			zone, offset := now.Zone()
 			message := map[string]interface{}{
@@ -61,7 +62,22 @@ func SetupRouter(router *gin.Engine) {
 				"message": message,
 			})
 		})
-
+		routes.POST("/mysql/login", func(c *gin.Context) {
+			var options map[string]interface{}
+			if err := c.ShouldBindJSON(&options); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"message": "Invalid JSON body",
+				})
+				return
+			}
+			response := controllers.Login(options)
+			status := http.StatusInternalServerError
+			if success, ok := response["success"].(bool); ok && success {
+				status = http.StatusOK
+			}
+			c.JSON(status, response)
+		})
 		//this router encript -token
 		routes.GET("/encript-token", func(c *gin.Context) {
 			amount := c.Query("amount")
@@ -180,8 +196,15 @@ func SetupRouter(router *gin.Engine) {
 		})
 	}
 	// Example of MySQL routes (commented for now)
-	mysql := router.Group("/api/mysql")
+	mysql := router.Group("/api/mysql", helpers.AuthMiddleware())
 	{
+		// Base route for testing if the server is running
+		mysql.GET("/", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"message": "Backend Mysql Api application router is working",
+			})
+		})
 		mysql.POST("/read", func(c *gin.Context) {
 			var options map[string]interface{}
 			if err := c.ShouldBindJSON(&options); err != nil {
@@ -191,12 +214,18 @@ func SetupRouter(router *gin.Engine) {
 				})
 				return
 			}
-			response := controllers.Read(options)
+			//token authorization
+			access_token := c.Query("access_token")
+			authorization := helpers.Authorization(map[string]interface{}{
+				"authorization": access_token,
+			})
+
+			//response := controllers.Read(options)
 			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
+			if success, ok := authorization["success"].(bool); ok && success {
 				status = http.StatusOK
 			}
-			c.JSON(status, response)
+			c.JSON(status, authorization)
 		})
 		mysql.POST("/read-bulk", func(c *gin.Context) {
 			var options []map[string]interface{}

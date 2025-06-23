@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/clbanning/mxj"
+	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 var (
@@ -33,6 +35,7 @@ var (
 	DatabaseUser     string
 	DatabasePassword string
 	DatabaseName     string
+	DatabasePort     string
 	Mailsender       string
 	Mailhost         string
 	Mailusername     string
@@ -41,6 +44,7 @@ var (
 	SmsUserName      string
 	SmsApiKey        string
 	SmsSenderId      string
+	JwtKey           string
 )
 
 func UpdateEnvVars() {
@@ -51,10 +55,10 @@ func UpdateEnvVars() {
 	SslCertificate = getEnvValue("SSL_CERTIFICATE", "").(string)
 	SslKey = getEnvValue("SSL_KEY", "").(string)
 	DatabaseHost = getEnvValue("DATABASE_HOST", "localhost").(string)
-	DatabaseHost = getEnvValue("DATABASE_HOST", "localhost").(string)
 	DatabaseUser = getEnvValue("DATABASE_USER", "root").(string)
 	DatabasePassword = getEnvValue("DATABASE_PASSWORD", "").(string)
 	DatabaseName = getEnvValue("DATABASE_NAME", "trick").(string)
+	DatabasePort = getEnvValue("DATABASE_PORT", "3306").(string)
 	Mailsender = getEnvValue("MAIL_SENDER", "noreply@example.com").(string)
 	Mailhost = getEnvValue("MAIL_HOST", "smtp.example.com").(string)
 	Mailusername = getEnvValue("MAIL_ADDRESS", "noreply@example.com").(string)
@@ -63,26 +67,135 @@ func UpdateEnvVars() {
 	SmsUserName = getEnvValue("AFRICAS_TALKING_USERNAME", "").(string)
 	SmsApiKey = getEnvValue("AFRICAS_TALKING_API_KEY", "").(string)
 	SmsSenderId = getEnvValue("AFRICAS_TALKING_SENDER_ID", "").(string)
+	JwtKey = getEnvValue("JWT_KEY", "").(string)
+}
+
+// authenticate
+func Authenticate(data map[string]interface{}) map[string]interface{} {
+	//key
+	var jwtKey = []byte(JwtKey)
+	// Create JWT claims 20 min
+	expireTime := time.Now().Add(20 * time.Minute)
+	claims := jwt.MapClaims{
+		"exp":          expireTime.Unix(),
+		"expired_time": expireTime.Format(time.RFC3339),
+	}
+	// Copy data fields into claims
+	for k, v := range data {
+		claims[k] = v
+	}
+	// Create token with claims
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	// Sign the token
+	tokenString, err := token.SignedString(jwtKey)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Authentication failed: " + err.Error(),
+		}
+	}
+	return map[string]interface{}{
+		"success": true,
+		"message": tokenString,
+	}
+}
+
+// AuthMiddleware validates access_token
+func Authorization(options map[string]interface{}) map[string]interface{} {
+	var jwtKey = []byte(JwtKey)
+	authTokenRaw, ok := options["authorization"].(string)
+	if !ok || authTokenRaw == "" {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Unauthorized: No token provided",
+		}
+	}
+
+	// Strip "Bearer " prefix if present
+	const bearerPrefix = "Bearer "
+	if len(authTokenRaw) > len(bearerPrefix) && authTokenRaw[:len(bearerPrefix)] == bearerPrefix {
+		authTokenRaw = authTokenRaw[len(bearerPrefix):]
+	}
+	// Parse and verify the token
+	token, err := jwt.Parse(authTokenRaw, func(token *jwt.Token) (interface{}, error) {
+		// Ensure HMAC is used
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, jwt.ErrSignatureInvalid
+		}
+		return jwtKey, nil
+	})
+	if err != nil || !token.Valid {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Unauthorized: Token expired or invalid",
+		}
+	}
+	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+		return map[string]interface{}{
+			"success": true,
+			"message": map[string]interface{}{
+				"status": "Successfully authorized",
+				"data":   claims,
+			},
+		}
+	}
+
+	return map[string]interface{}{
+		"success": false,
+		"message": "Unauthorized: Invalid token structure",
+	}
+}
+
+// Middleware to enforce token authentication
+func AuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		accessToken := c.Query("access_token")
+
+		if accessToken == "" {
+			authHeader := c.GetHeader("Authorization")
+			if strings.HasPrefix(authHeader, "Bearer ") {
+				accessToken = strings.TrimPrefix(authHeader, "Bearer ")
+			}
+		}
+
+		result := Authorization(map[string]interface{}{
+			"authorization": accessToken,
+		})
+
+		if success, ok := result["success"].(bool); !ok || !success {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, result)
+			return
+		}
+
+		// Optionally set claims for controllers
+		if msg, ok := result["message"].(map[string]interface{}); ok {
+			if data, ok := msg["data"].(map[string]interface{}); ok {
+				c.Set("claims", data)
+			}
+		}
+
+		c.Next()
+	}
 }
 
 func getEnvValue(key string, fallback interface{}) interface{} {
 	val := os.Getenv(key)
 	if val == "" {
-		log.Printf(`{"warning": "Environment variable %q not set, using default: %v"}`, key, fallback)
+		log.Printf(`{"success": false,"message": "Environment variable %q not set, using default: %v"}`, key, fallback)
 		return fallback
 	}
 	switch fallback.(type) {
 	case int:
 		intVal, err := strconv.Atoi(val)
 		if err != nil {
-			log.Printf(`{"warning": "Invalid int for %q: %q, using default: %v"}`, key, val, fallback)
+			log.Printf(`{"success": false,"message": "Invalid int for %q: %q, using default: %v"}`, key, val, fallback)
 			return fallback
 		}
 		return intVal
 	case string:
 		return val
 	default:
-		log.Printf(`{"warning": "Unsupported type for key %q, using default: %v"}`, key, fallback)
+		log.Printf(`{"success": false,"message": "Unsupported type for key %q, using default: %v"}`, key, fallback)
 		return fallback
 	}
 }

@@ -970,6 +970,93 @@ func Backup(options map[string]interface{}) map[string]interface{} {
 	}
 }
 
+// login
+func Login(options map[string]interface{}) map[string]interface{} {
+	table, ok := options["table"].(string)
+	if !ok || table == "" {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Missing or invalid table name",
+		}
+	}
+	selectFields := "*"
+	condition := make(map[string]interface{})
+	if cond, ok := options["condition"].(map[string]interface{}); ok {
+		condition = cond
+	}
+	if len(condition) == 0 {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Missing condition",
+		}
+	}
+	whereClause, params := helpers.Where(condition)
+	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s", selectFields, table, whereClause)
+	rows, err := db.Query(query, params...)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": err.Error(),
+		}
+	}
+	defer rows.Close()
+	columns, err := rows.Columns()
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": err.Error(),
+		}
+	}
+	var results []map[string]interface{}
+	for rows.Next() {
+		columnValues := make([]interface{}, len(columns))
+		columnPointers := make([]interface{}, len(columns))
+		for i := range columnValues {
+			columnPointers[i] = &columnValues[i]
+		}
+		if err := rows.Scan(columnPointers...); err != nil {
+			return map[string]interface{}{
+				"success": false,
+				"message": err.Error(),
+			}
+		}
+		rowMap := make(map[string]interface{})
+		for i, col := range columns {
+			val := columnPointers[i].(*interface{})
+			if byteVal, ok := (*val).([]uint8); ok {
+				rowMap[col] = string(byteVal)
+			} else {
+				rowMap[col] = *val
+			}
+		}
+		results = append(results, rowMap)
+	}
+	if len(results) == 0 {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Invalid credentials",
+		}
+	}
+	user := results[0]
+	token := helpers.Authenticate(map[string]interface{}{
+		//"id":        user["id"],
+		"unique_id": user["unique_id"],
+	})
+	if success, ok := token["success"].(bool); ok && success {
+		return map[string]interface{}{
+			"success": true,
+			"token":   token["message"],
+			"user":    user,
+		}
+	}
+	return map[string]interface{}{
+		"success": false,
+		"token":   token["message"],
+		"user":    user,
+		"message": "Token generation failed",
+	}
+}
+
 // read mysql
 func Read(options map[string]interface{}) map[string]interface{} {
 	// Extract and validate required fields
