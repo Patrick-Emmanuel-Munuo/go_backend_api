@@ -33,7 +33,8 @@ go mod init go_backend_api
 
 # Tidy and download all dependencies
 go mod tidy
-go build -tags netgo -ldflags "-s -w" -o app
+go build -tags netgo -ldflags "-s -w" -o app.exe
+
 
 
 Flags explanation:
