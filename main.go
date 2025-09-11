@@ -73,7 +73,9 @@ func main() {
 	})
 	// Use POST for Read because you expect JSON body
 	// Load app routes
-	route.SetupRouter(router)
+	route.Router_main(router)
+	//load mysql roouters
+	route.Router_mysql(router)
 	// Handle 404
 	router.NoRoute(func(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{

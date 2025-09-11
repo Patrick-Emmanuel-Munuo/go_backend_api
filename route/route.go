@@ -13,7 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRouter(router *gin.Engine) {
+func Router_main(router *gin.Engine) {
 	routes := router.Group("/api")
 	{
 		// Base route for testing if the server is running
@@ -62,24 +62,8 @@ func SetupRouter(router *gin.Engine) {
 				"message": message,
 			})
 		})
-		routes.POST("/mysql/login", func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.Login(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
 		//this router encript -token
-		routes.GET("/encript-token", func(c *gin.Context) {
+		routes.GET("/encript-token", helpers.AuthMiddleware(), func(c *gin.Context) {
 			amount := c.Query("amount")
 			result := controllers.EncriptToken(map[string]interface{}{
 				"amount": amount,
@@ -91,7 +75,7 @@ func SetupRouter(router *gin.Engine) {
 			}
 		})
 		// This route decript-token
-		routes.GET("/decript-token", func(c *gin.Context) {
+		routes.GET("/decript-token", helpers.AuthMiddleware(), func(c *gin.Context) {
 			token := c.Query("token")
 			result := controllers.DecriptToken(map[string]interface{}{
 				"token": token,
@@ -115,7 +99,7 @@ func SetupRouter(router *gin.Engine) {
 			}
 		})
 		//This route generates and send otp one-time password (OTP) for testing purposes
-		routes.GET("/send-otp", func(c *gin.Context) {
+		routes.GET("/send-otp", helpers.AuthMiddleware(), func(c *gin.Context) {
 			length := c.Query("length")
 			email := c.Query("email")
 			phone := c.Query("phone")
@@ -132,7 +116,7 @@ func SetupRouter(router *gin.Engine) {
 			}
 		})
 		//send sms routers
-		routes.GET("/send-sms-local", func(c *gin.Context) {
+		routes.GET("/send-sms-local", helpers.AuthMiddleware(), func(c *gin.Context) {
 			to := c.Query("to")
 			message := c.Query("message")
 			if to == "" || message == "" {
@@ -150,7 +134,7 @@ func SetupRouter(router *gin.Engine) {
 			}
 		})
 		//send sms routers
-		routes.GET("/send-sms", func(c *gin.Context) {
+		routes.GET("/send-sms", helpers.AuthMiddleware(), func(c *gin.Context) {
 			to := c.Query("to")
 			message := c.Query("message")
 			if to == "" || message == "" {
@@ -168,7 +152,7 @@ func SetupRouter(router *gin.Engine) {
 			}
 		})
 		//send mail routers
-		routes.GET("/send-mail", func(c *gin.Context) {
+		routes.GET("/send-mail", helpers.AuthMiddleware(), func(c *gin.Context) {
 			to := c.Query("to") // e.g. "user1@example.com,user2@example.com"
 			message := c.Query("message")
 			if to == "" || message == "" {
@@ -195,247 +179,7 @@ func SetupRouter(router *gin.Engine) {
 			}
 		})
 	}
-	// Example of MySQL routes (commented for now)
-	mysql := router.Group("/api/mysql", helpers.AuthMiddleware())
-	{
-		// Base route for testing if the server is running
-		mysql.GET("/", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{
-				"success": true,
-				"message": "Backend Mysql Api application router is working",
-			})
-		})
-		mysql.POST("/read", func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			//token authorization
-			access_token := c.Query("access_token")
-			authorization := helpers.Authorization(map[string]interface{}{
-				"authorization": access_token,
-			})
 
-			//response := controllers.Read(options)
-			status := http.StatusInternalServerError
-			if success, ok := authorization["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, authorization)
-		})
-		mysql.POST("/read-bulk", func(c *gin.Context) {
-			var options []map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.ReadBulk(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-		mysql.POST("/list", func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.List(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-		mysql.POST("/list-all", func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.ListAll(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-		mysql.POST("/update", func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.Update(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-		mysql.POST("/update-bulk", func(c *gin.Context) {
-			var options []map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.UpdateBulk(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-		mysql.POST("/create", func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.Create(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-		mysql.POST("/create-bulk", func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.CreateBulk(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-		mysql.POST("/delete", func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.Delete(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-		mysql.POST("/delete-bulk", func(c *gin.Context) {
-			var options []map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.DelateBulk(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-		mysql.POST("/search", func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.Search(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-		mysql.POST("/search-between", func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.SearchBetween(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-		mysql.POST("/count", func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.Count(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-		mysql.POST("/backup", func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.Backup(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-	}
 	files := router.Group("/api/files")
 	{
 		//files.POST("/upload", controllers.UploadFileHandler)
