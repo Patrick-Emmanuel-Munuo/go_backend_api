@@ -53,3 +53,10 @@ git clone https://github.com/vartrick98/go_backend_api.git
 
 # Navigate into the project folder
 cd go_backend_api
+
+start.bat
+
+
+
+
+NSSM for Robust Service
