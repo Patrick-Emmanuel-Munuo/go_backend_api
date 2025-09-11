@@ -1,80 +1,54 @@
-# SSL window power shell output 
-# Step 1: Ensure the output directory exists
-New-Item -ItemType Directory -Path .\configurations -Force
-# Step 2: Generate the certificate
-$cert = New-SelfSignedCertificate -Subject 'CN=169.254.110.224' -DnsName '169.254.110.224' -CertStoreLocation 'Cert:\LocalMachine\My' -KeyLength 2048 -NotAfter (Get-Date).AddYears(2) -KeyExportPolicy Exportable
-
-# Step 3: Secure the password
-$pwd = ConvertTo-SecureString -String 'Variable98@' -Force -AsPlainText
-
-# Step 4: Export the PFX file
-Export-PfxCertificate -Cert "Cert:\LocalMachine\My\$($cert.Thumbprint)" -FilePath .\configurations\server.pfx -Password $pwd
-
-# generate .pem files
-openssl pkcs12 -in configurations\server.pfx -clcerts -nokeys -out configurations\cert.pem -passin pass:Variable98@
-openssl pkcs12 -in configurations\server.pfx -nocerts -nodes -out configurations\key.pem -passin pass:Variable98@
-
-
-
-
-
-
-
+# Go Backend API Template
 
 **Description:**  
-This is a basic Go (Golang) application built with the **Gin** web framework. It serves as a backend API template for building and deploying services. It supports simple CRUD operations and serves as a foundation for further extensions.
-
----
-### Run go in nodemon
-npm install -g nodemon
-nodemon --exec go run main.go
-
-### buil go server
-go build main.go
-
-#buld for deployment
-go mod tidy && go build -tags netgo -ldflags '-s -w' -o app
-
-
- Response
-
-json
-    { "success": true, "message": "data"}
-
-    { "success": false, "message": "error response "}
-
-## Routes Available
-## Table of Contents
-
-1. [Installation](#installation)
-2. [Project Structure](#project-structure)
-3. [Backend Setup](#backend-setup)
-4. [API Endpoints](#api-endpoints)
-   - [GET /](#1-get-)
-   - [GET /api/generate-otp](#2-get-apigenerate-otp)
-   - [POST /api/create](#3-post-apicreate)
-5. [Usage](#usage)
-6. [Running the Application](#running-the-application)
-7. [Environment Variables](#environment-variables)
-8. [Contributing](#contributing)
-9. [License](#license)
+This is a basic **Go (Golang)** application built using the **Gin** web framework. It serves as a backend API template suitable for building and deploying services. It supports simple CRUD operations and provides a foundation for further extensions.
 
 ---
 
-## Installation
+## Development
 
-### Prerequisites
+### Run Go in Development Mode (with live reload)
 
-Make sure you have the following installed:
-
-- Go (1.18+)
-- Git
-- [Gin framework](https://github.com/gin-gonic/gin)
-
-### Clone the Repository
-
-First, clone the repository to your local machine:
+You can use **nodemon** to automatically restart your Go server during development:
 
 ```bash
-git clone https://github.com/yourusername/go-application.git
-cd go-application
+# Install nodemon globally
+npm install -g nodemon
+
+# Run the Go server with live reload
+nodemon --exec "go run main.go"
+
+Build the Go Server
+
+To compile your Go application:
+# Build the main.go file
+go build main.go
+
+Build for Production
+For production deployment:
+
+# Clean dependencies and build with optimizations
+# Initialize Go modules (if not already initialized)
+go mod init go_backend_api
+
+# Tidy and download all dependencies
+go mod tidy
+go build -tags netgo -ldflags "-s -w" -o app
+
+
+Flags explanation:
+-tags netgo → Forces the use of the Go net package implementation.
+-ldflags '-s -w' → Strips debug information to reduce binary size.
+
+Prerequisites
+Ensure the following software is installed:
+Go 1.18+
+Git
+Gin Framework
+
+Clone the Repository
+# Clone the repository
+git clone https://github.com/vartrick98/go_backend_api.git
+
+# Navigate into the project folder
+cd go_backend_api
