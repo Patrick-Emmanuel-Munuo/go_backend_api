@@ -106,7 +106,6 @@ func Read(options map[string]interface{}) map[string]interface{} {
 			"message": "Missing or invalid table name",
 		}
 	}
-
 	// Optional: SELECT fields
 	selectFields := "*"
 	if selectSlice, ok := options["select"].([]interface{}); ok && len(selectSlice) > 0 {

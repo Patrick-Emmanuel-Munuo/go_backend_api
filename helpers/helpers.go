@@ -2,7 +2,7 @@ package helpers
 
 import (
 	"bytes"
-	"crypto/tls"
+	"database/sql"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -21,33 +21,36 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+// This assumes a global DB variable
+var DB *sql.DB // exported so other packages can use it
 var (
-	ServerSecurity   string
-	ServerDomain     string
-	ServerPort       string
-	SslCertificate   string
-	SslKey           string
-	DatabaseHost     string
-	DatabaseUser     string
-	DatabasePassword string
-	DatabaseName     string
-	DatabasePort     string
-	Mailsender       string
-	Mailhost         string
-	Mailusername     string
-	Mailpassword     string
-	Mailport         int
-	SmsUserName      string
-	SmsApiKey        string
-	SmsSenderId      string
-	JwtKey           string
+	ServerSecurity    string
+	ServerDomain      string
+	ServerPort        int
+	ServerEnvironment string
+	SslCertificate    string
+	SslKey            string
+	DatabaseHost      string
+	DatabaseUser      string
+	DatabasePassword  string
+	DatabaseName      string
+	DatabasePort      string
+	Mailsender        string
+	Mailhost          string
+	Mailusername      string
+	Mailpassword      string
+	Mailport          int
+	SmsUserName       string
+	SmsApiKey         string
+	SmsSenderId       string
+	JwtKey            string
 )
 
 func UpdateEnvVars() {
-	//security := os.Getenv("SECURITY") DOMAIN
 	ServerSecurity = getEnvValue("SECURITY", "http").(string)
 	ServerDomain = getEnvValue("DOMAIN", "localhost").(string)
-	ServerPort = getEnvValue("PORT", "2010").(string)
+	ServerEnvironment = getEnvValue("ENVIRONMENT", "development").(string)
+	ServerPort = getEnvValue("PORT", 2010).(int)
 	SslCertificate = getEnvValue("SSL_CERTIFICATE", "").(string)
 	SslKey = getEnvValue("SSL_KEY", "").(string)
 	DatabaseHost = getEnvValue("DATABASE_HOST", "localhost").(string)
@@ -66,65 +69,53 @@ func UpdateEnvVars() {
 	JwtKey = getEnvValue("JWT_KEY", "").(string)
 }
 
-// StartServer starts HTTP/HTTPS server with retry on port in use
-func StartServer(port int, domain string, handler http.Handler, secure bool, sslCert string, sslKey string, maxRetries int) map[string]interface{} {
-	attempt := 0
-	for {
-		addr := fmt.Sprintf("%s:%d", domain, port+attempt)
-		server := &http.Server{
-			Addr:    addr,
-			Handler: handler,
-		}
+// StartServer starts a Gin HTTP/HTTPS server (no retries)
+// StartServer starts a Gin HTTP/HTTPS server (no retries)
 
-		if secure {
-			// Check if cert/key exist
-			if _, err := os.Stat(sslCert); os.IsNotExist(err) {
-				return map[string]interface{}{"success": false, "message": "SSL certificate not found"}
-			}
-			if _, err := os.Stat(sslKey); os.IsNotExist(err) {
-				return map[string]interface{}{"success": false, "message": "SSL key not found"}
-			}
+func StartServer(router *gin.Engine) map[string]interface{} {
+	secure := ServerSecurity == "https"
+	sslCert := SslCertificate
+	sslKey := SslKey
 
-			// Load TLS certificate
-			cer, err := tls.LoadX509KeyPair(sslCert, sslKey)
-			if err != nil {
-				return map[string]interface{}{"success": false, "message": "SSL load error: " + err.Error()}
-			}
+	// Correct string formatting
+	addr := fmt.Sprintf(":%d", ServerPort)
 
-			server.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cer}}
-		}
-
-		// Try to listen
-		ln, err := net.Listen("tcp", addr)
-		if err != nil {
-			if _, ok := err.(*net.OpError); ok && attempt < maxRetries {
-				attempt++
-				time.Sleep(500 * time.Millisecond)
-				continue
-			} else {
-				return map[string]interface{}{"success": false, "message": "Server start error: " + err.Error()}
-			}
-		}
-
-		go func() {
-			if secure {
-				if err := server.ServeTLS(ln, "", ""); err != nil && err != http.ErrServerClosed {
-					fmt.Println(map[string]interface{}{"success": false, "message": "HTTPS serve error: " + err.Error()})
-				}
-			} else {
-				if err := server.Serve(ln); err != nil && err != http.ErrServerClosed {
-					fmt.Println(map[string]interface{}{"success": false, "message": "HTTP serve error: " + err.Error()})
-				}
-			}
-		}()
-
-		return map[string]interface{}{
-			"success":  true,
-			"protocol": map[bool]string{true: "https", false: "http"}[secure],
-			"message":  fmt.Sprintf("Server running at %s://%s [PID: %d]", map[bool]string{true: "https", false: "http"}[secure], addr, os.Getpid()),
+	// Check SSL certs if HTTPS
+	if secure {
+		if _, err := os.Stat(sslCert); os.IsNotExist(err) {
+			log.Printf(`{"success": false, "message": "SSL certificate not found, falling back to HTTP"}`)
+			secure = false
+		} else if _, err := os.Stat(sslKey); os.IsNotExist(err) {
+			log.Printf(`{"success": false, "message": "SSL key not found, falling back to HTTP"}`)
+			secure = false
 		}
 	}
+
+	// Run server with configured address
+	var err error
+	if secure {
+		err = router.RunTLS(addr, sslCert, sslKey)
+	} else {
+		err = router.Run(addr)
+	}
+	if err != nil && err != http.ErrServerClosed {
+		log.Printf(`{"success": false, "message": "Server error: %v"}`, err)
+	}
+
+	protocol := "http"
+	if secure {
+		protocol = "https"
+	}
+	log.Printf(`{"success": true, "message": "Server running at %s://%s [PID: %d]"}`, protocol, addr, os.Getpid())
+
+	return map[string]interface{}{
+		"success":  true,
+		"protocol": protocol,
+		"message":  fmt.Sprintf("Server running at %s://%s [PID: %d]", protocol, addr, os.Getpid()),
+	}
 }
+
+
 
 // authenticate
 func Authenticate(data map[string]interface{}) map[string]interface{} {
@@ -307,6 +298,40 @@ func ClearIPAddress(ip string) string {
 }
 
 // ---------- SQL HELPERS ----------
+// InitDBConnection establishes and checks the MySQL connection with retries
+func InitDBConnection() map[string]interface{} {
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+		DatabaseUser,
+		DatabasePassword,
+		DatabaseHost,
+		DatabasePort,
+		DatabaseName,
+	)
+
+	var err error
+	DB, err = sql.Open("mysql", dsn)
+	if err != nil {
+		log.Printf(`{"success": false, "message": "Failed to open MySQL connection: %v"}`, err)
+		return map[string]interface{}{
+			"success": false,
+			"message": fmt.Sprintf("Failed to open MySQL connection: %v", err),
+		}
+	}
+	if err = DB.Ping(); err != nil {
+		log.Printf(`{"success": false, "message": "Failed to ping MySQL: %v"}`, err)
+		return map[string]interface{}{
+			"success": false,
+			"message": fmt.Sprintf("Failed to ping MySQL: %v", err),
+		}
+	}
+	// ✅ Connection successful
+	log.Printf(`{"success": true, "message": "MySQL connection established successfully"}`)
+	return map[string]interface{}{
+		"success": true,
+		"message": "MySQL connection established successfully",
+	}
+}
+
 // Where builds WHERE condition with AND
 func Where(cond map[string]interface{}) (string, []interface{}) {
 	var parts []string
