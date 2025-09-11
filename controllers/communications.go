@@ -37,6 +37,11 @@ func GenerateOTP(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 	const otpCharset = "0123456789"
+	//maximum length of otp 20
+	const MaxOTPLength = 20
+	if otpLength > MaxOTPLength {
+		otpLength = MaxOTPLength
+	}
 	otp := make([]byte, otpLength)
 
 	for i := 0; i < otpLength; i++ {
@@ -48,6 +53,8 @@ func GenerateOTP(options map[string]interface{}) map[string]interface{} {
 				"message": map[string]interface{}{
 					"status": "Failed to generate secure OTP",
 					"otp":    nil,
+					"length": otpLength,
+					"time":   time.Now().Format(time.RFC3339),
 				},
 			}
 		}
@@ -61,6 +68,8 @@ func GenerateOTP(options map[string]interface{}) map[string]interface{} {
 		"message": map[string]interface{}{
 			"status": "OTP generated successfully",
 			"otp":    otpFormatted,
+			"length": otpLength,
+			"time":   time.Now().Format(time.RFC3339),
 		},
 	}
 }
