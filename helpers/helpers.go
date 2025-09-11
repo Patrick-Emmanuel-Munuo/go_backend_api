@@ -70,13 +70,31 @@ func UpdateEnvVars() {
 }
 
 // StartServer starts a Gin HTTP/HTTPS server (no retries)
-// StartServer starts a Gin HTTP/HTTPS server (no retries)
-
 func StartServer(router *gin.Engine) map[string]interface{} {
 	secure := ServerSecurity == "https"
 	addr := fmt.Sprintf("%s:%d", ServerDomain, ServerPort)
 
+	// Resolve SSL paths to absolute if using HTTPS
 	if secure {
+		if !filepath.IsAbs(SslCertificate) {
+			absCert, err := filepath.Abs(SslCertificate)
+			if err != nil {
+				log.Printf(`{"success": false, "message": "Invalid SSL_CERTIFICATE path: %v"}`, err)
+				secure = false
+			} else {
+				SslCertificate = absCert
+			}
+		}
+		if !filepath.IsAbs(SslKey) {
+			absKey, err := filepath.Abs(SslKey)
+			if err != nil {
+				log.Printf(`{"success": false, "message": "Invalid SSL_KEY path: %v"}`, err)
+				secure = false
+			} else {
+				SslKey = absKey
+			}
+		}
+		// Check if files exist
 		if _, err := os.Stat(SslCertificate); os.IsNotExist(err) {
 			log.Printf(`{"success": false, "message": "SSL certificate not found, falling back to HTTP"}`)
 			secure = false
@@ -86,13 +104,11 @@ func StartServer(router *gin.Engine) map[string]interface{} {
 			secure = false
 		}
 	}
-
 	protocol := "http"
 	if secure {
 		protocol = "https"
 	}
 	log.Printf(`{"success": true, "message": "Starting server at %s://%s [PID: %d]"}`, protocol, addr, os.Getpid())
-
 	var err error
 	if secure {
 		err = router.RunTLS(addr, SslCertificate, SslKey)
@@ -106,7 +122,6 @@ func StartServer(router *gin.Engine) map[string]interface{} {
 			"message": fmt.Sprintf("Server error: %v", err),
 		}
 	}
-
 	return map[string]interface{}{
 		"success":  true,
 		"protocol": protocol,
