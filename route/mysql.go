@@ -71,7 +71,6 @@ func Router_mysql(router *gin.Engine) {
 			}
 			c.JSON(status, result)
 		})
-
 		mysql.POST("/read", helpers.AuthMiddleware(), func(c *gin.Context) {
 			var options map[string]interface{}
 			if err := c.ShouldBindJSON(&options); err != nil {

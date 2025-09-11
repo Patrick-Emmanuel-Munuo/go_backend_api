@@ -182,33 +182,71 @@ func Router_main(router *gin.Engine) {
 
 	files := router.Group("/api/files")
 	{
-		//files.POST("/upload", controllers.UploadFileHandler)
-		//files.POST("/upload-multiple", controllers.UploadMultipleFilesHandler)
-		//files.GET("/download/:filename", controllers.DownloadFile)
-		files.GET("/download", func(c *gin.Context) {
-			filename := c.Query("file")
+		// Single file upload
+		files.POST("/upload", helpers.AuthMiddleware(), func(c *gin.Context) {
+			result := controllers.UploadFile(map[string]interface{}{
+				"context":   c,
+				"file_name": "myfile", // must match <input name="myfile">
+			})
+
+			if success, ok := result["success"].(bool); ok && success {
+				c.JSON(http.StatusOK, result)
+			} else {
+				c.JSON(http.StatusBadRequest, result) // use 400 for client errors
+			}
+		})
+
+		// Multiple files upload
+		files.POST("/upload-multiple", helpers.AuthMiddleware(), func(c *gin.Context) {
+			result := controllers.UploadMultipleFiles(map[string]interface{}{
+				"context": c,
+			})
+
+			if success, ok := result["success"].(bool); ok && success {
+				c.JSON(http.StatusOK, result)
+			} else {
+				c.JSON(http.StatusBadRequest, result)
+			}
+		})
+
+		// Download file
+		files.GET("/download/:filename", helpers.AuthMiddleware(), func(c *gin.Context) {
+			filename := c.Param("filename")
 			if filename == "" {
-				c.JSON(http.StatusInternalServerError, gin.H{
+				c.JSON(http.StatusBadRequest, gin.H{
 					"success": false,
-					"message": "file name required in query",
+					"message": "filename param required",
 				})
 				return
 			}
+
 			fullPath := filepath.Join("./public", filename)
 			if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-				c.JSON(http.StatusOK, gin.H{
+				c.JSON(http.StatusNotFound, gin.H{
 					"success": false,
-					"message": "file name not found",
+					"message": "file not found",
 				})
 				return
 			}
-			// Instead of returning map here, serve the file directly
+
+			// Stream file
 			c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
 			c.Header("Content-Type", "application/octet-stream")
 			c.File(fullPath)
-			return // no JSON response because we sent file directly
 		})
-		//files.DELETE("/delete/:filename", controllers.DeleteFileHandler)
+
+		// Delete file
+		files.DELETE("/delete/:filename", helpers.AuthMiddleware(), func(c *gin.Context) {
+			result := controllers.DeleteFile(map[string]interface{}{
+				"context": c,
+			})
+
+			if success, ok := result["success"].(bool); ok && success {
+				c.JSON(http.StatusOK, result)
+			} else {
+				c.JSON(http.StatusBadRequest, result)
+			}
+		})
 	}
 
 }

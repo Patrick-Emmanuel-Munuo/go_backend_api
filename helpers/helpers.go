@@ -74,39 +74,38 @@ func UpdateEnvVars() {
 
 func StartServer(router *gin.Engine) map[string]interface{} {
 	secure := ServerSecurity == "https"
-	sslCert := SslCertificate
-	sslKey := SslKey
+	addr := fmt.Sprintf("%s:%d", ServerDomain, ServerPort)
 
-	// Correct string formatting
-	addr := fmt.Sprintf(":%d", ServerPort)
-
-	// Check SSL certs if HTTPS
 	if secure {
-		if _, err := os.Stat(sslCert); os.IsNotExist(err) {
+		if _, err := os.Stat(SslCertificate); os.IsNotExist(err) {
 			log.Printf(`{"success": false, "message": "SSL certificate not found, falling back to HTTP"}`)
 			secure = false
-		} else if _, err := os.Stat(sslKey); os.IsNotExist(err) {
+		}
+		if _, err := os.Stat(SslKey); os.IsNotExist(err) {
 			log.Printf(`{"success": false, "message": "SSL key not found, falling back to HTTP"}`)
 			secure = false
 		}
-	}
-
-	// Run server with configured address
-	var err error
-	if secure {
-		err = router.RunTLS(addr, sslCert, sslKey)
-	} else {
-		err = router.Run(addr)
-	}
-	if err != nil && err != http.ErrServerClosed {
-		log.Printf(`{"success": false, "message": "Server error: %v"}`, err)
 	}
 
 	protocol := "http"
 	if secure {
 		protocol = "https"
 	}
-	log.Printf(`{"success": true, "message": "Server running at %s://%s [PID: %d]"}`, protocol, addr, os.Getpid())
+	log.Printf(`{"success": true, "message": "Starting server at %s://%s [PID: %d]"}`, protocol, addr, os.Getpid())
+
+	var err error
+	if secure {
+		err = router.RunTLS(addr, SslCertificate, SslKey)
+	} else {
+		err = router.Run(addr)
+	}
+	if err != nil && err != http.ErrServerClosed {
+		log.Printf(`{"success": false, "message": "Server error: %v"}`, err)
+		return map[string]interface{}{
+			"success": false,
+			"message": fmt.Sprintf("Server error: %v", err),
+		}
+	}
 
 	return map[string]interface{}{
 		"success":  true,
@@ -114,8 +113,6 @@ func StartServer(router *gin.Engine) map[string]interface{} {
 		"message":  fmt.Sprintf("Server running at %s://%s [PID: %d]", protocol, addr, os.Getpid()),
 	}
 }
-
-
 
 // authenticate
 func Authenticate(data map[string]interface{}) map[string]interface{} {
