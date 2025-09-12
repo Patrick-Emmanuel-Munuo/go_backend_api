@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"runtime"
+	"time"
 	"vartrick/controllers"
 	"vartrick/helpers"
 	"vartrick/route"
@@ -36,6 +37,9 @@ func main() {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.Default()
 
+	// Apply the headers middleware globally
+	//router.Use(middlewares.HeadersMiddleware())
+
 	// Trust only localhost (safe for dev)
 	//router.SetTrustedProxies([]string{"127.0.0.1"})
 
@@ -55,7 +59,14 @@ func main() {
 			"message": "Golang Welcome to VarTrick Server application",
 		})
 	})
+	// Start cleanup to prevent memory leaks
+	helpers.StartCleanup(10 * time.Minute)
+	// ApiRateLimiter creates a rate limiter for all requests
+	// 5 requests/sec per IP max burst 10  block 10 seconds for /api/ and /api/V1/ routes
+	router.Use(helpers.RateLimitMiddleware(2, 3, 10*time.Second, "/api/", "/api/V1/"))
 
+	// CORS middleware
+	//router.Use(helpers.CORSMiddleware([]string{"http://localhost:3000"}))
 	// Load app routes
 	route.Router_main(router)
 	route.Router_mysql(router)
