@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -22,11 +23,16 @@ func main() {
 
 	// Update helper vars from environment
 	helpers.UpdateEnvVars()
+	// --- Initialize Logger ---
+	logger, _ := zap.NewProduction()
+	defer logger.Sync() // flushes buffer, if any
+	sugar := logger.Sugar()
+	sugar.Info("Starting VarTrick Server...")
 
-	// Recover from panic (simulate try-catch)
+	// --- Recover from panic ---
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf(`{"success": false, "message": "Unexpected fatal error", "error": "%v"}`, r)
+			sugar.Errorf("Unexpected fatal error: %v", r)
 		}
 	}()
 
@@ -35,8 +41,17 @@ func main() {
 
 	// Gin release mode
 	gin.SetMode(gin.ReleaseMode)
-	router := gin.Default()
-
+	router := gin.New()
+	router.Use(gin.Recovery()) // catch panics and log
+	// --- Logging Middleware ---
+	router.Use(func(c *gin.Context) {
+		start := time.Now()
+		c.Next()
+		latency := time.Since(start)
+		status := c.Writer.Status()
+		sugar.Infof("%s | %d | %s | %s", c.ClientIP(), status, c.Request.Method, c.Request.URL.Path)
+		sugar.Infof("Latency: %v", latency)
+	})
 	// Apply the headers middleware globally
 	//router.Use(middlewares.HeadersMiddleware())
 
@@ -47,9 +62,9 @@ func main() {
 	dbResult := helpers.InitDBConnection()
 	if dbResult["success"].(bool) {
 		controllers.SetDB(helpers.DB)
-		log.Printf(`{"success": true, "message": "Database connected successfully"}`)
+		sugar.Info("Database connected successfully")
 	} else {
-		log.Printf(`{"success": false, "message": "%s"}`, dbResult["message"])
+		sugar.Errorf("Database connection failed: %s", dbResult["message"])
 	}
 
 	// Basic welcome route
@@ -79,9 +94,11 @@ func main() {
 		})
 	})
 
-	// Start server (no retry)
-	result := helpers.StartServer(router)
-	if !result["success"].(bool) {
-		log.Printf(`{"success": false, "message": "%s"}`, result["message"])
+	// Start server with logger
+	result := helpers.StartServer(router, sugar)
+	if result["success"].(bool) {
+		sugar.Infof("Server started successfully: %s", result["message"])
+	} else {
+		sugar.Errorf("Server failed to start: %s", result["message"])
 	}
 }

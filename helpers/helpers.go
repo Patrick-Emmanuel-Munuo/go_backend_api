@@ -2,6 +2,7 @@ package helpers
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"fmt"
 	"io"
@@ -10,15 +11,18 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/clbanning/mxj"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"go.uber.org/zap"
 )
 
 // This assumes a global DB variable
@@ -69,17 +73,18 @@ func UpdateEnvVars() {
 	JwtKey = getEnvValue("JWT_KEY", "").(string)
 }
 
-// StartServer starts a Gin HTTP/HTTPS server (no retries)
-func StartServer(router *gin.Engine) map[string]interface{} {
+// StartServer starts a Gin HTTP/HTTPS server
+// StartServer starts Gin HTTP/HTTPS server with Zap logging and graceful shutdown
+func StartServer(router *gin.Engine, logger *zap.SugaredLogger) map[string]interface{} {
 	secure := ServerSecurity == "https"
 	addr := fmt.Sprintf("%s:%d", ServerDomain, ServerPort)
 
-	// Resolve SSL paths to absolute if using HTTPS
+	// Resolve SSL paths if HTTPS
 	if secure {
 		if !filepath.IsAbs(SslCertificate) {
 			absCert, err := filepath.Abs(SslCertificate)
 			if err != nil {
-				log.Printf(`{"success": false, "message": "Invalid SSL_CERTIFICATE path: %v"}`, err)
+				logger.Errorf("Invalid SSL_CERTIFICATE path: %v, falling back to HTTP", err)
 				secure = false
 			} else {
 				SslCertificate = absCert
@@ -88,40 +93,60 @@ func StartServer(router *gin.Engine) map[string]interface{} {
 		if !filepath.IsAbs(SslKey) {
 			absKey, err := filepath.Abs(SslKey)
 			if err != nil {
-				log.Printf(`{"success": false, "message": "Invalid SSL_KEY path: %v"}`, err)
+				logger.Errorf("Invalid SSL_KEY path: %v, falling back to HTTP", err)
 				secure = false
 			} else {
 				SslKey = absKey
 			}
 		}
-		// Check if files exist
 		if _, err := os.Stat(SslCertificate); os.IsNotExist(err) {
-			log.Printf(`{"success": false, "message": "SSL certificate not found, falling back to HTTP"}`)
+			logger.Warn("SSL certificate not found, falling back to HTTP")
 			secure = false
 		}
 		if _, err := os.Stat(SslKey); os.IsNotExist(err) {
-			log.Printf(`{"success": false, "message": "SSL key not found, falling back to HTTP"}`)
+			logger.Warn("SSL key not found, falling back to HTTP")
 			secure = false
 		}
 	}
+
 	protocol := "http"
 	if secure {
 		protocol = "https"
 	}
-	log.Printf(`{"success": true, "message": "Starting server at %s://%s [PID: %d]"}`, protocol, addr, os.Getpid())
-	var err error
-	if secure {
-		err = router.RunTLS(addr, SslCertificate, SslKey)
-	} else {
-		err = router.Run(addr)
+
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: router,
 	}
-	if err != nil && err != http.ErrServerClosed {
-		log.Printf(`{"success": false, "message": "Server error: %v"}`, err)
-		return map[string]interface{}{
-			"success": false,
-			"message": fmt.Sprintf("Server error: %v", err),
+
+	// Start server in a goroutine
+	go func() {
+		logger.Infof("Starting server at %s://%s [PID: %d]", protocol, addr, os.Getpid())
+		var err error
+		if secure {
+			err = srv.ListenAndServeTLS(SslCertificate, SslKey)
+		} else {
+			err = srv.ListenAndServe()
 		}
+		if err != nil && err != http.ErrServerClosed {
+			logger.Errorf("Server error: %v", err)
+		}
+	}()
+
+	// Graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, os.Kill, syscall.SIGTERM)
+	<-quit
+	logger.Info("Shutdown signal received, exiting...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		logger.Errorf("Server forced to shutdown: %v", err)
+	} else {
+		logger.Info("Server exited gracefully")
 	}
+
 	return map[string]interface{}{
 		"success":  true,
 		"protocol": protocol,
@@ -311,6 +336,7 @@ func ClearIPAddress(ip string) string {
 
 // ---------- SQL HELPERS ----------
 // InitDBConnection establishes and checks the MySQL connection with retries
+
 func InitDBConnection() map[string]interface{} {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 		DatabaseUser,
@@ -323,21 +349,23 @@ func InitDBConnection() map[string]interface{} {
 	var err error
 	DB, err = sql.Open("mysql", dsn)
 	if err != nil {
-		log.Printf(`{"success": false, "message": "Failed to open MySQL connection: %v"}`, err)
+		//logger.Errorf("Failed to open MySQL connection: %v", err)
 		return map[string]interface{}{
 			"success": false,
 			"message": fmt.Sprintf("Failed to open MySQL connection: %v", err),
 		}
 	}
+
 	if err = DB.Ping(); err != nil {
-		log.Printf(`{"success": false, "message": "Failed to ping MySQL: %v"}`, err)
+		//logger.Errorf("Failed to ping MySQL: %v", err)
 		return map[string]interface{}{
 			"success": false,
 			"message": fmt.Sprintf("Failed to ping MySQL: %v", err),
 		}
 	}
+
 	// ✅ Connection successful
-	log.Printf(`{"success": true, "message": "MySQL connection established successfully"}`)
+	//logger.Info("MySQL connection established successfully")
 	return map[string]interface{}{
 		"success": true,
 		"message": "MySQL connection established successfully",
