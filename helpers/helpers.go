@@ -22,7 +22,6 @@ import (
 	"github.com/clbanning/mxj"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"go.uber.org/zap"
 )
 
 // This assumes a global DB variable
@@ -75,7 +74,7 @@ func UpdateEnvVars() {
 
 // StartServer starts a Gin HTTP/HTTPS server
 // StartServer starts Gin HTTP/HTTPS server with Zap logging and graceful shutdown
-func StartServer(router *gin.Engine, logger *zap.SugaredLogger) map[string]interface{} {
+func StartServer(router *gin.Engine) map[string]interface{} {
 	secure := ServerSecurity == "https"
 	addr := fmt.Sprintf("%s:%d", ServerDomain, ServerPort)
 
@@ -84,7 +83,7 @@ func StartServer(router *gin.Engine, logger *zap.SugaredLogger) map[string]inter
 		if !filepath.IsAbs(SslCertificate) {
 			absCert, err := filepath.Abs(SslCertificate)
 			if err != nil {
-				logger.Errorf("Invalid SSL_CERTIFICATE path: %v, falling back to HTTP", err)
+				log.Printf(`{"success": false, "message": "Invalid SSL_CERTIFICATE path: %v, falling back to HTTP", err}`)
 				secure = false
 			} else {
 				SslCertificate = absCert
@@ -93,18 +92,18 @@ func StartServer(router *gin.Engine, logger *zap.SugaredLogger) map[string]inter
 		if !filepath.IsAbs(SslKey) {
 			absKey, err := filepath.Abs(SslKey)
 			if err != nil {
-				logger.Errorf("Invalid SSL_KEY path: %v, falling back to HTTP", err)
+				log.Printf(`{"success": false, "message": "Invalid SSL_KEY path: %v, falling back to HTTP", err}`)
 				secure = false
 			} else {
 				SslKey = absKey
 			}
 		}
 		if _, err := os.Stat(SslCertificate); os.IsNotExist(err) {
-			logger.Warn("SSL certificate not found, falling back to HTTP")
+			log.Printf(`{"success": false, "message": "SSL certificate not found at %s, falling back to HTTP"}`, SslCertificate)
 			secure = false
 		}
 		if _, err := os.Stat(SslKey); os.IsNotExist(err) {
-			logger.Warn("SSL key not found, falling back to HTTP")
+			log.Printf(`{"success": false, "message": "SSL key not found at %s, falling back to HTTP"}`, SslKey)
 			secure = false
 		}
 	}
@@ -121,7 +120,7 @@ func StartServer(router *gin.Engine, logger *zap.SugaredLogger) map[string]inter
 
 	// Start server in a goroutine
 	go func() {
-		logger.Infof("Starting server at %s://%s [PID: %d]", protocol, addr, os.Getpid())
+		log.Printf(`{"success": true, "message": "Server running at %s://%s [PID: %d]"}`, protocol, addr, os.Getpid())
 		var err error
 		if secure {
 			err = srv.ListenAndServeTLS(SslCertificate, SslKey)
@@ -129,7 +128,7 @@ func StartServer(router *gin.Engine, logger *zap.SugaredLogger) map[string]inter
 			err = srv.ListenAndServe()
 		}
 		if err != nil && err != http.ErrServerClosed {
-			logger.Errorf("Server error: %v", err)
+			log.Printf(`{"success": false, "message": "Server error: %v"}`, err)
 		}
 	}()
 
@@ -137,14 +136,16 @@ func StartServer(router *gin.Engine, logger *zap.SugaredLogger) map[string]inter
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, os.Kill, syscall.SIGTERM)
 	<-quit
-	logger.Info("Shutdown signal received, exiting...")
+	log.Printf(`{"success": true, "message": "Shutting down server..."}`)
+	// The context is used to inform the server it has 10 seconds to finish
+	// the request it is currently handling
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
-		logger.Errorf("Server forced to shutdown: %v", err)
+		log.Printf(`{"success": false, "message": "Server forced to shutdown: %v"}`, err)
 	} else {
-		logger.Info("Server exited gracefully")
+		log.Printf(`{"success": true, "message": "Server exited gracefully"}`)
 	}
 
 	return map[string]interface{}{
