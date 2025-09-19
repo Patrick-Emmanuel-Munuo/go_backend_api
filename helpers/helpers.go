@@ -3,7 +3,12 @@ package helpers
 import (
 	"bytes"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"database/sql"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -20,6 +25,7 @@ import (
 	"time"
 
 	"github.com/clbanning/mxj"
+	"github.com/fatih/color"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -27,26 +33,29 @@ import (
 // This assumes a global DB variable
 var DB *sql.DB // exported so other packages can use it
 var (
-	ServerSecurity    string
-	ServerDomain      string
-	ServerPort        int
-	ServerEnvironment string
-	SslCertificate    string
-	SslKey            string
-	DatabaseHost      string
-	DatabaseUser      string
-	DatabasePassword  string
-	DatabaseName      string
-	DatabasePort      string
-	Mailsender        string
-	Mailhost          string
-	Mailusername      string
-	Mailpassword      string
-	Mailport          int
-	SmsUserName       string
-	SmsApiKey         string
-	SmsSenderId       string
-	JwtKey            string
+	ServerSecurity       string
+	ServerDomain         string
+	ServerPort           int
+	ServerEnvironment    string
+	SslCertificate       string
+	SslKey               string
+	DatabaseHost         string
+	DatabaseUser         string
+	DatabasePassword     string
+	DatabaseName         string
+	DatabasePort         string
+	Mailsender           string
+	Mailhost             string
+	Mailusername         string
+	Mailpassword         string
+	Mailport             int
+	SmsUserName          string
+	SmsApiKey            string
+	SmsSenderId          string
+	JwtKey               string
+	EnableEncripted      bool
+	encryptionKey        []byte
+	initializationVector []byte
 )
 
 func UpdateEnvVars() {
@@ -70,9 +79,30 @@ func UpdateEnvVars() {
 	SmsApiKey = getEnvValue("AFRICAS_TALKING_API_KEY", "").(string)
 	SmsSenderId = getEnvValue("AFRICAS_TALKING_SENDER_ID", "").(string)
 	JwtKey = getEnvValue("JWT_KEY", "").(string)
+	EnableEncripted = getEnvValue("Encripted", false).(bool)
+	encryptionKey = []byte(getEnvValue("ENCRYPTION_KEY", "1234567890123456").(string))
+	initializationVector = []byte(getEnvValue("ENCRYPTION_INITIALIZE", "1234567890123456").(string))
 }
 
-// StartServer starts a Gin HTTP/HTTPS server
+// LogJSON  prints logs in JSON format with optional colors
+func LogJSON(success bool, message string) {
+	entry := map[string]interface{}{
+		"timestamp": time.Now().Format("Mon 01/02/2006 15:04:05.000"),
+		"success":   success,
+		"message":   message,
+	}
+
+	if data, err := json.Marshal(entry); err == nil {
+		if success {
+			color.New(color.FgGreen).Println(string(data))
+		} else {
+			color.New(color.FgRed).Println(string(data))
+		}
+	} else {
+		color.New(color.FgRed).Println("Error marshaling log JSON:", err)
+	}
+}
+
 // StartServer starts Gin HTTP/HTTPS server with Zap logging and graceful shutdown
 func StartServer(router *gin.Engine) map[string]interface{} {
 	secure := ServerSecurity == "https"
@@ -152,6 +182,145 @@ func StartServer(router *gin.Engine) map[string]interface{} {
 		"success":  true,
 		"protocol": protocol,
 		"message":  fmt.Sprintf("Server running at %s://%s [PID: %d]", protocol, addr, os.Getpid()),
+	}
+}
+
+// --- AES helpers ---
+// Encript encrypts the JSON inside data["message"]
+func Encript(data map[string]interface{}) map[string]interface{} {
+	message, ok := data["message"]
+	if !ok {
+		return map[string]interface{}{
+			"success": false,
+			"message": "message field missing",
+		}
+	}
+
+	// Convert message to JSON string
+	jsonBytes, err := json.Marshal(message)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "JSON marshal error: " + err.Error(),
+		}
+	}
+	plaintext := jsonBytes
+
+	if !EnableEncripted {
+		data["message"] = string(plaintext)
+		return data
+	}
+
+	block, err := aes.NewCipher(encryptionKey)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "AES error: " + err.Error(),
+		}
+	}
+
+	if len(initializationVector) != block.BlockSize() {
+		return map[string]interface{}{
+			"success": false,
+			"message": "invalid IV length",
+		}
+	}
+
+	// PKCS7 padding inside function
+	pkcs7Pad := func(data []byte, blockSize int) []byte {
+		padding := blockSize - len(data)%blockSize
+		padtext := bytes.Repeat([]byte{byte(padding)}, padding)
+		return append(data, padtext...)
+	}
+
+	mode := cipher.NewCBCEncrypter(block, initializationVector)
+	padded := pkcs7Pad(plaintext, block.BlockSize())
+	ciphertext := make([]byte, len(padded))
+	mode.CryptBlocks(ciphertext, padded)
+
+	cipherText := base64.StdEncoding.EncodeToString(ciphertext)
+
+	return map[string]interface{}{
+		"success": data["success"],
+		"message": cipherText,
+	}
+}
+
+// Decript decrypts the JSON inside data["message"]
+func Decript(data map[string]interface{}) map[string]interface{} {
+	message, ok := data["message"].(string)
+	if !ok {
+		return map[string]interface{}{
+			"success": false,
+			"message": "message field must be a string",
+		}
+	}
+
+	if !EnableEncripted {
+		return data
+	}
+
+	cipherText, err := base64.StdEncoding.DecodeString(message)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Base64 decode error: " + err.Error(),
+		}
+	}
+
+	block, err := aes.NewCipher(encryptionKey)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "AES error: " + err.Error(),
+		}
+	}
+
+	if len(initializationVector) != block.BlockSize() {
+		return map[string]interface{}{
+			"success": false,
+			"message": "invalid IV length",
+		}
+	}
+
+	mode := cipher.NewCBCDecrypter(block, initializationVector)
+	plaintext := make([]byte, len(cipherText))
+	mode.CryptBlocks(plaintext, cipherText)
+
+	// PKCS7 unpadding inside function
+	pkcs7Unpad := func(data []byte, blockSize int) ([]byte, error) {
+		length := len(data)
+		if length == 0 || length%blockSize != 0 {
+			return nil, errors.New("invalid padding size")
+		}
+		padding := int(data[length-1])
+		if padding == 0 || padding > blockSize {
+			return nil, errors.New("invalid padding")
+		}
+		return data[:length-padding], nil
+	}
+
+	plainText, err := pkcs7Unpad(plaintext, block.BlockSize())
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Decryption error: " + err.Error(),
+		}
+	}
+
+	// Convert JSON back to Go object
+	var original interface{}
+	err = json.Unmarshal(plainText, &original)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "JSON unmarshal error: " + err.Error(),
+		}
+	}
+
+	return map[string]interface{}{
+		"success": data["success"],
+		"message": original,
 	}
 }
 

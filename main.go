@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"runtime"
 	"time"
@@ -55,7 +54,7 @@ func ColorLogger() gin.HandlerFunc {
 func main() {
 	// Load environment variables
 	if err := godotenv.Load(".env"); err != nil {
-		log.Printf(`{"success": false, "message": "No .env file found or failed to load"}`)
+		helpers.LogJSON(false, fmt.Sprintf("error in Load environment variables Unexpected fatal : %v", err))
 	}
 
 	// Update helper vars
@@ -64,7 +63,7 @@ func main() {
 	// --- Recover from panic ---
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf(`{"success": false, "message": "Unexpected fatal error: %v", r}`)
+			helpers.LogJSON(false, fmt.Sprintf("error in Recover from panic Unexpected fatal error: %v", r))
 		}
 	}()
 
@@ -83,9 +82,9 @@ func main() {
 	dbResult := helpers.InitDBConnection()
 	if dbResult["success"].(bool) {
 		controllers.SetDB(helpers.DB)
-		log.Printf(`{"success": true, "message": "Database connected successfully"}`)
+		helpers.LogJSON(true, "Database connected successfully")
 	} else {
-		log.Printf(`{"success": false, "message": "Database connection failed: %s", dbResult["message"]}`)
+		helpers.LogJSON(false, fmt.Sprintf("Database connection failed: %s", dbResult["message"]))
 	}
 
 	// Basic route
@@ -108,6 +107,7 @@ func main() {
 
 	// Handle 404
 	router.NoRoute(func(c *gin.Context) {
+		helpers.LogJSON(false, fmt.Sprintf("404 Not Found: %s %s", c.Request.Method, c.Request.URL.Path))
 		c.JSON(http.StatusNotFound, gin.H{
 			"success": false,
 			"message": "Wrong route or requested method",
@@ -117,8 +117,8 @@ func main() {
 	// Start server
 	result := helpers.StartServer(router)
 	if result["success"].(bool) {
-		log.Printf(`{"success": true, "message": "Server started successfully: %s", result["message"]}`)
+		helpers.LogJSON(true, fmt.Sprintf("Server started successfully on port %s", helpers.ServerPort))
 	} else {
-		log.Printf(`{"success": false, "message": "Server failed to start: %s", result["message"]}`)
+		helpers.LogJSON(false, fmt.Sprintf("Server failed to start: %s", result["message"]))
 	}
 }
