@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"vartrick/controllers" // Assuming you'll have models for MySQL connection
+	"vartrick/controllers"
 	"vartrick/helpers"
 
 	"github.com/gin-gonic/gin"
@@ -119,10 +119,6 @@ func Router_main(router *gin.Engine) {
 		routes.GET("/send-sms-local", helpers.AuthMiddleware(), func(c *gin.Context) {
 			to := c.Query("to")
 			message := c.Query("message")
-			if to == "" || message == "" {
-				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "'to' and 'message' query parameters are required"})
-				return
-			}
 			responce := controllers.SendMessageLocal(map[string]interface{}{
 				"to":      strings.Split(to, ","),
 				"message": message,
@@ -137,10 +133,6 @@ func Router_main(router *gin.Engine) {
 		routes.GET("/send-sms", helpers.AuthMiddleware(), func(c *gin.Context) {
 			to := c.Query("to")
 			message := c.Query("message")
-			if to == "" || message == "" {
-				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "'to' and 'message' query parameters are required"})
-				return
-			}
 			responce := controllers.SendMessage(map[string]interface{}{
 				"to":      strings.Split(to, ","),
 				"message": message,
@@ -155,23 +147,14 @@ func Router_main(router *gin.Engine) {
 		routes.GET("/send-mail", helpers.AuthMiddleware(), func(c *gin.Context) {
 			to := c.Query("to") // e.g. "user1@example.com,user2@example.com"
 			message := c.Query("message")
-			if to == "" || message == "" {
-				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "'to' and 'message' query parameters are required"})
-				return
-			}
 			// Split multiple emails by comma, trim spaces
-			recipients := strings.Split(to, ",")
-			for i := range recipients {
-				recipients[i] = strings.TrimSpace(recipients[i])
-			}
-			options := map[string]interface{}{
-				"To":      recipients,
+			responce := controllers.SendMail(map[string]interface{}{
+				"To":      strings.Split(to, ","),
 				"Message": message,
 				"Subject": "Test Email",
 				"HTML":    "<b>This is bold</b>",
 				// "Attachments": []string{"./report.pdf"},
-			}
-			responce := controllers.SendMail(options)
+			})
 			if success, ok := responce["success"].(bool); ok && success {
 				c.JSON(http.StatusOK, responce)
 			} else {
