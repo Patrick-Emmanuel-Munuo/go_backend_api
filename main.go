@@ -74,6 +74,9 @@ func main() {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 
+	router.GET("/favicon.ico", func(c *gin.Context) {
+		c.Status(204) // No Content
+	})
 	// --- Middlewares ---
 	router.Use(ColorLogger())  // pretty colored request logs
 	router.Use(gin.Recovery()) // catch panics
