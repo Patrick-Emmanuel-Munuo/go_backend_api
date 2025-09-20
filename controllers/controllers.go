@@ -27,8 +27,8 @@ func Backup(options map[string]interface{}) map[string]interface{} {
 			"message": "Email is required and must be a string.",
 		}
 	}
-	timeNow := time.Now()
-	fileName := fmt.Sprintf("mysql_backup_%d.sql", timeNow.Unix())
+	now := time.Now()
+	fileName := fmt.Sprintf("mysql_backup_%d.sql", now.Unix())
 	publicDir := filepath.Join(".", "public")
 	if err := os.MkdirAll(publicDir, 0755); err != nil {
 		log.Println("Failed to create public dir:", err)
@@ -86,7 +86,7 @@ func Backup(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 	// Optional: Cleanup old backups older than 7 days
-	helpers.CleanupOldBackups(publicDir, 7*24*time.Hour)
+	//helpers.CleanupOldBackups(publicDir, 7*24*time.Hour)
 	return map[string]interface{}{
 		"success": true,
 		"message": map[string]interface{}{
@@ -219,7 +219,10 @@ func ReadBulk(options []map[string]interface{}) map[string]interface{} {
 	if len(options) == 0 {
 		return map[string]interface{}{
 			"success": false,
-			"message": "Body can't be empty",
+			"message": map[string]interface{}{
+				"error": "Body can't be empty",
+				"data":  nil,
+			},
 		}
 	}
 
@@ -271,7 +274,10 @@ func ReadBulk(options []map[string]interface{}) map[string]interface{} {
 
 	return map[string]interface{}{
 		"success": false,
-		"message": "Data not found",
+		"message": map[string]interface{}{
+			"error": "Data not found",
+			"data":  data,
+		},
 	}
 }
 
