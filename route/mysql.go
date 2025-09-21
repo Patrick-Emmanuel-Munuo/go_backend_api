@@ -119,6 +119,7 @@ func Router_mysql(router *gin.Engine) {
 			c.JSON(status, response)
 		})
 		mysql.POST("/list", helpers.AuthMiddleware(), func(c *gin.Context) {
+			//add encriptions from helpers
 			var options map[string]interface{}
 			if err := c.ShouldBindJSON(&options); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{
@@ -128,11 +129,13 @@ func Router_mysql(router *gin.Engine) {
 				return
 			}
 			response := controllers.List(options)
+			// Encrypt response before sending
+			encryptedResponse := helpers.Encript(response)
 			status := http.StatusInternalServerError
 			if success, ok := response["success"].(bool); ok && success {
 				status = http.StatusOK
 			}
-			c.JSON(status, response)
+			c.JSON(status, encryptedResponse)
 		})
 		mysql.POST("/list-all", helpers.AuthMiddleware(), func(c *gin.Context) {
 			var options map[string]interface{}
@@ -144,11 +147,13 @@ func Router_mysql(router *gin.Engine) {
 				return
 			}
 			response := controllers.ListAll(options)
+			// Encrypt response before sending
+			encryptedResponse := helpers.Encript(response)
 			status := http.StatusInternalServerError
 			if success, ok := response["success"].(bool); ok && success {
 				status = http.StatusOK
 			}
-			c.JSON(status, response)
+			c.JSON(status, encryptedResponse)
 		})
 		mysql.POST("/update", helpers.AuthMiddleware(), func(c *gin.Context) {
 			var options map[string]interface{}

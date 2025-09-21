@@ -8,7 +8,6 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -33,29 +32,34 @@ import (
 // This assumes a global DB variable
 var DB *sql.DB // exported so other packages can use it
 var (
-	ServerSecurity       string
-	ServerDomain         string
-	ServerPort           int
-	ServerEnvironment    string
-	SslCertificate       string
-	SslKey               string
-	DatabaseHost         string
-	DatabaseUser         string
-	DatabasePassword     string
-	DatabaseName         string
-	DatabasePort         string
-	Mailsender           string
-	Mailhost             string
-	Mailusername         string
-	Mailpassword         string
-	Mailport             int
-	SmsUserName          string
-	SmsApiKey            string
-	SmsSenderId          string
-	JwtKey               string
-	EnableEncripted      bool
-	encryptionKey        []byte
-	initializationVector []byte
+	ServerSecurity          string
+	ServerDomain            string
+	ServerPort              int
+	ServerEnvironment       string
+	SslCertificate          string
+	SslKey                  string
+	DatabaseHost            string
+	DatabaseUser            string
+	DatabasePassword        string
+	DatabaseName            string
+	DatabasePort            string
+	Mailsender              string
+	Mailhost                string
+	Mailusername            string
+	Mailpassword            string
+	Mailport                int
+	SmsUserName             string
+	SmsApiKey               string
+	SmsSenderId             string
+	JwtKey                  string
+	EnableEncripted         bool
+	EncryptionKey           string
+	initializationVector    string
+	EncryptionAlgorithm     string
+	EncryptionInitializatin string
+	// encryptionKey and initializationVector are the binary forms used by crypto
+	EncryptionKey_Byte        []byte
+	initializationVector_Byte []byte
 )
 
 func UpdateEnvVars() {
@@ -80,8 +84,9 @@ func UpdateEnvVars() {
 	SmsSenderId = getEnvValue("SMS_SENDER_ID", "").(string)
 	JwtKey = getEnvValue("JWT_KEY", "").(string)
 	EnableEncripted = getEnvValue("EnableEncripted", false).(bool)
-	encryptionKey = []byte(getEnvValue("ENCRYPTION_KEY", "1234567890123456").(string))
-	initializationVector = []byte(getEnvValue("ENCRYPTION_INITIALIZE", "1234567890123456").(string))
+	EncryptionKey = (getEnvValue("EncryptionKey", "1234567890123456").(string))
+	EncryptionAlgorithm = (getEnvValue("EncryptionAlgorithm", "aes-128-cbc").(string))
+	EncryptionInitializatin = (getEnvValue("EncryptionInitializatin", "2d52550dc714656b").(string))
 }
 
 func getEnvValue(key string, fallback interface{}) interface{} {
@@ -240,14 +245,41 @@ func Encript(data map[string]interface{}) map[string]interface{} {
 			"message": "JSON marshal error: " + err.Error(),
 		}
 	}
-	plaintext := jsonBytes
 
+	// If encryption is disabled, return JSON string
 	if !EnableEncripted {
-		data["message"] = string(plaintext)
+		data["message"] = string(jsonBytes)
 		return data
 	}
+	// Ensure key and IV are present and valid
+	// Prepare binary key and IV used by crypto
+	if EncryptionKey != "" {
+		EncryptionKey_Byte = []byte(EncryptionKey)
+		// if key length is not 16/24/32, log a warning (must be one of these)
+		if !(len(EncryptionKey_Byte) == 16 || len(EncryptionKey_Byte) == 24 || len(EncryptionKey_Byte) == 32) {
+			LogJSON(false, fmt.Sprintf("Invalid EncryptionKey length (%d). AES requires 16, 24 or 32 bytes.", len(EncryptionKey_Byte)))
+			// You may choose to pad/truncate here — we prefer explicit error.
+		}
+	} else {
+		EncryptionKey_Byte = nil
+	}
+	if EncryptionKey_Byte == nil || !(len(EncryptionKey_Byte) == 16 || len(EncryptionKey_Byte) == 24 || len(EncryptionKey_Byte) == 32) {
+		return map[string]interface{}{
+			"success": false,
+			"message": "invalid encryption key configuration",
+		}
+	}
 
-	block, err := aes.NewCipher(encryptionKey)
+	//find initializationVector_Byte
+	initializationVector_Byte = []byte(EncryptionInitializatin)
+	if initializationVector_Byte == nil || len(initializationVector_Byte) != aes.BlockSize {
+		return map[string]interface{}{
+			"success": false,
+			"message": "invalid initialization vector (IV) configuration",
+		}
+	}
+
+	block, err := aes.NewCipher(EncryptionKey_Byte)
 	if err != nil {
 		return map[string]interface{}{
 			"success": false,
@@ -255,36 +287,27 @@ func Encript(data map[string]interface{}) map[string]interface{} {
 		}
 	}
 
-	if len(initializationVector) != block.BlockSize() {
-		return map[string]interface{}{
-			"success": false,
-			"message": "invalid IV length",
-		}
-	}
+	// PKCS7 padding
+	blockSize := block.BlockSize()
+	padding := blockSize - (len(jsonBytes) % blockSize)
+	padtext := bytes.Repeat([]byte{byte(padding)}, padding)
+	padded := append(jsonBytes, padtext...)
 
-	// PKCS7 padding inside function
-	pkcs7Pad := func(data []byte, blockSize int) []byte {
-		padding := blockSize - len(data)%blockSize
-		padtext := bytes.Repeat([]byte{byte(padding)}, padding)
-		return append(data, padtext...)
-	}
-
-	mode := cipher.NewCBCEncrypter(block, initializationVector)
-	padded := pkcs7Pad(plaintext, block.BlockSize())
 	ciphertext := make([]byte, len(padded))
+	mode := cipher.NewCBCEncrypter(block, initializationVector_Byte)
 	mode.CryptBlocks(ciphertext, padded)
 
-	cipherText := base64.StdEncoding.EncodeToString(ciphertext)
+	encoded := base64.StdEncoding.EncodeToString(ciphertext)
 
 	return map[string]interface{}{
 		"success": data["success"],
-		"message": cipherText,
+		"message": encoded,
 	}
 }
 
 // Decript decrypts the JSON inside data["message"]
 func Decript(data map[string]interface{}) map[string]interface{} {
-	message, ok := data["message"].(string)
+	messageStr, ok := data["message"].(string)
 	if !ok {
 		return map[string]interface{}{
 			"success": false,
@@ -293,10 +316,48 @@ func Decript(data map[string]interface{}) map[string]interface{} {
 	}
 
 	if !EnableEncripted {
+		// If encryption disabled, attempt to parse message as JSON string into object
+		var original interface{}
+		if err := json.Unmarshal([]byte(messageStr), &original); err != nil {
+			// not JSON, just return the raw string
+			return data
+		}
+		data["message"] = original
 		return data
 	}
+	// Prepare binary key and IV used by crypto
+	if EncryptionKey != "" {
+		EncryptionKey_Byte = []byte(EncryptionKey)
+		// if key length is not 16/24/32, log a warning (must be one of these)
+		if !(len(EncryptionKey_Byte) == 16 || len(EncryptionKey_Byte) == 24 || len(EncryptionKey_Byte) == 32) {
+			LogJSON(false, fmt.Sprintf("Invalid EncryptionKey length (%d). AES requires 16, 24 or 32 bytes.", len(EncryptionKey_Byte)))
+			// You may choose to pad/truncate here — we prefer explicit error.
+		}
+	} else {
+		EncryptionKey_Byte = nil
+	}
+	if EncryptionKey_Byte == nil || !(len(EncryptionKey_Byte) == 16 || len(EncryptionKey_Byte) == 24 || len(EncryptionKey_Byte) == 32) {
+		return map[string]interface{}{
+			"success": false,
+			"message": "invalid encryption key configuration",
+		}
+	}
+	//find initializationVector_Byte
+	initializationVector_Byte = []byte(initializationVector)
+	if initializationVector_Byte == nil || len(initializationVector_Byte) != aes.BlockSize {
+		return map[string]interface{}{
+			"success": false,
+			"message": "invalid initialization vector (IV) configuration",
+		}
+	}
+	if initializationVector_Byte == nil || len(initializationVector_Byte) != aes.BlockSize {
+		return map[string]interface{}{
+			"success": false,
+			"message": "invalid initialization vector (IV) configuration",
+		}
+	}
 
-	cipherText, err := base64.StdEncoding.DecodeString(message)
+	cipherBytes, err := base64.StdEncoding.DecodeString(messageStr)
 	if err != nil {
 		return map[string]interface{}{
 			"success": false,
@@ -304,7 +365,7 @@ func Decript(data map[string]interface{}) map[string]interface{} {
 		}
 	}
 
-	block, err := aes.NewCipher(encryptionKey)
+	block, err := aes.NewCipher(EncryptionKey_Byte)
 	if err != nil {
 		return map[string]interface{}{
 			"success": false,
@@ -312,42 +373,36 @@ func Decript(data map[string]interface{}) map[string]interface{} {
 		}
 	}
 
-	if len(initializationVector) != block.BlockSize() {
+	if len(cipherBytes)%block.BlockSize() != 0 {
 		return map[string]interface{}{
 			"success": false,
-			"message": "invalid IV length",
+			"message": "ciphertext is not a multiple of the block size",
 		}
 	}
 
-	mode := cipher.NewCBCDecrypter(block, initializationVector)
-	plaintext := make([]byte, len(cipherText))
-	mode.CryptBlocks(plaintext, cipherText)
+	plaintext := make([]byte, len(cipherBytes))
+	mode := cipher.NewCBCDecrypter(block, initializationVector_Byte)
+	mode.CryptBlocks(plaintext, cipherBytes)
 
-	// PKCS7 unpadding inside function
-	pkcs7Unpad := func(data []byte, blockSize int) ([]byte, error) {
-		length := len(data)
-		if length == 0 || length%blockSize != 0 {
-			return nil, errors.New("invalid padding size")
-		}
-		padding := int(data[length-1])
-		if padding == 0 || padding > blockSize {
-			return nil, errors.New("invalid padding")
-		}
-		return data[:length-padding], nil
-	}
-
-	plainText, err := pkcs7Unpad(plaintext, block.BlockSize())
-	if err != nil {
+	// PKCS7 unpadding
+	length := len(plaintext)
+	if length == 0 {
 		return map[string]interface{}{
 			"success": false,
-			"message": "Decryption error: " + err.Error(),
+			"message": "decrypted plaintext is empty",
 		}
 	}
+	padLen := int(plaintext[length-1])
+	if padLen <= 0 || padLen > block.BlockSize() {
+		return map[string]interface{}{
+			"success": false,
+			"message": "invalid padding size",
+		}
+	}
+	unpadded := plaintext[:length-padLen]
 
-	// Convert JSON back to Go object
 	var original interface{}
-	err = json.Unmarshal(plainText, &original)
-	if err != nil {
+	if err := json.Unmarshal(unpadded, &original); err != nil {
 		return map[string]interface{}{
 			"success": false,
 			"message": "JSON unmarshal error: " + err.Error(),
@@ -592,13 +647,6 @@ func GenerateLike(like map[string]interface{}) (string, []interface{}) {
 }
 
 // UpdateSet builds `SET field1=?, field2=?`
-func GenerateSet2(set map[string]interface{}) string {
-	var parts []string
-	for key := range set {
-		parts = append(parts, fmt.Sprintf("%s = ?", EscapeId(key)))
-	}
-	return strings.Join(parts, ", ")
-}
 func GenerateSet(set map[string]interface{}) (string, []interface{}) {
 	var parts []string
 	var params []interface{}
