@@ -18,7 +18,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"sort"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -543,64 +543,104 @@ func InitDBConnection() map[string]interface{} {
 }
 
 // Where builds WHERE condition with AND
-func Where(cond map[string]interface{}) (string, []interface{}) {
+func GenerateWhere(cond map[string]interface{}) (string, []interface{}) {
 	var parts []string
 	var params []interface{}
 	for k, v := range cond {
-		parts = append(parts, fmt.Sprintf("%s = ?", k))
+		parts = append(parts, fmt.Sprintf("%s = ?", EscapeId(k)))
 		params = append(params, v)
 	}
 	return strings.Join(parts, " AND "), params
 }
 
 // WhereOr builds WHERE condition with OR
-func WhereOr(cond map[string]interface{}) (string, []interface{}) {
+func GenerateWhereOr(cond map[string]interface{}) (string, []interface{}) {
 	var parts []string
 	var params []interface{}
 	for k, v := range cond {
-		parts = append(parts, fmt.Sprintf("%s = ?", k))
+		parts = append(parts, fmt.Sprintf("%s = ?", EscapeId(k)))
 		params = append(params, v)
 	}
 	return strings.Join(parts, " OR "), params
 }
 
-// JoinFields returns `field1`, `field2`, ...
-func JoinFields(fields []string) string {
-	var wrapped []string
-	for _, f := range fields {
-		wrapped = append(wrapped, "`"+f+"`")
-	}
-	return strings.Join(wrapped, ", ")
-}
-
 // Like builds WHERE with LIKE conditions
-func Like(like map[string]interface{}) (string, []interface{}) {
+func GenerateLike(like map[string]interface{}) (string, []interface{}) {
 	var conditions []string
 	var params []interface{}
 	for key, val := range like {
-		conditions = append(conditions, fmt.Sprintf("%s LIKE ?", key))
+		conditions = append(conditions, fmt.Sprintf("%s LIKE ?", EscapeId(key)))
 		params = append(params, fmt.Sprintf("%%%v%%", val))
 	}
 	return strings.Join(conditions, " AND "), params
 }
 
 // UpdateSet builds `SET field1=?, field2=?`
-func UpdateSet(set map[string]interface{}) string {
+func GenerateSet(set map[string]interface{}) string {
 	var parts []string
 	for key := range set {
-		parts = append(parts, key+" = ?")
+		parts = append(parts, fmt.Sprintf("%s = ?", EscapeId(key)))
 	}
 	return strings.Join(parts, ", ")
 }
 
-// SortedKeys returns keys of a map in sorted order
-func SortedKeys(m map[string]interface{}) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
+// Select generate
+func GenerateSelect(fields []string) string {
+	if len(fields) == 0 {
+		return "*"
 	}
-	sort.Strings(keys)
-	return keys
+	return strings.Join(EscapeIdentifiers(fields), ", ")
+}
+
+// EscapeId safely escapes table/column names using backticks
+func EscapeId(identifier string) string {
+	// Strip dangerous characters except underscore and alphanumerics
+	re := regexp.MustCompile(`[^a-zA-Z0-9_]+`)
+	safe := re.ReplaceAllString(identifier, "")
+	return "`" + safe + "`"
+}
+
+// EscapeIdentifiers for multiple fields
+func EscapeIdentifiers(identifiers []string) []string {
+	escaped := make([]string, len(identifiers))
+	for i, id := range identifiers {
+		escaped[i] = EscapeId(id)
+	}
+	return escaped
+}
+
+// Scan SQL rows into []map[string]interface{}
+func scanRows(rows *sql.Rows) ([]map[string]interface{}, error) {
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
+	var results []map[string]interface{}
+	for rows.Next() {
+		values := make([]interface{}, len(columns))
+		valuePtrs := make([]interface{}, len(columns))
+		for i := range values {
+			valuePtrs[i] = &values[i]
+		}
+
+		if err := rows.Scan(valuePtrs...); err != nil {
+			return nil, err
+		}
+
+		rowMap := map[string]interface{}{}
+		for i, col := range columns {
+			val := values[i]
+			if b, ok := val.([]byte); ok {
+				rowMap[col] = string(b)
+			} else {
+				rowMap[col] = val
+			}
+		}
+		results = append(results, rowMap)
+	}
+
+	return results, nil
 }
 
 // convert xml to json
