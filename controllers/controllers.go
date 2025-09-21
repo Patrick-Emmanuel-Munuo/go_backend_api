@@ -38,13 +38,13 @@ func Backup(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 	filePath := filepath.Join(publicDir, fileName)
-	if helpers.DatabasePassword == "" {
+	/*if helpers.DatabasePassword == "" {
 		log.Println("MYSQL_PASSWORD not set in environment or helpers")
 		return map[string]interface{}{
 			"success": false,
 			"message": "MySQL password not configured.",
 		}
-	}
+	}*/
 	//cmd := exec.Command("mysqldump", "-h", helpers.DatabaseHost, "-u", helpers.DatabaseUser, "-p"+helpers.DatabasePassword, helpers.DatabaseName)
 	cmd := exec.Command("mysqldump",
 		"-h", helpers.DatabaseHost,
@@ -106,16 +106,11 @@ func Read(options map[string]interface{}) map[string]interface{} {
 			"message": "Missing or invalid table name",
 		}
 	}
-	// Optional: SELECT fields
+	// Handle SELECT fields using helpers.GenerateSelect
 	selectFields := "*"
-	if selectSlice, ok := options["select"].([]interface{}); ok && len(selectSlice) > 0 {
-		fields := make([]string, len(selectSlice))
-		for i, f := range selectSlice {
-			fields[i], _ = f.(string)
-		}
-		selectFields = helpers.GenerateSelect(fields)
+	if select_data, ok := options["select"]; ok {
+		selectFields = helpers.GenerateSelect(select_data)
 	}
-
 	// Parse "condition" and "or_condition"
 	condition := make(map[string]interface{})
 	orCondition := make(map[string]interface{})
@@ -134,22 +129,151 @@ func Read(options map[string]interface{}) map[string]interface{} {
 	}
 
 	// Build WHERE clause
+	// Build WHERE clause
 	var whereClause string
 	var params []interface{}
-	if len(condition) > 0 && len(orCondition) > 0 {
+
+	switch {
+	case len(condition) > 0 && len(orCondition) > 0:
 		where1, params1 := helpers.GenerateWhere(condition)
 		where2, params2 := helpers.GenerateWhereOr(orCondition)
 		whereClause = fmt.Sprintf("( %s ) AND ( %s )", where1, where2)
 		params = append(params, params1...)
 		params = append(params, params2...)
-	} else if len(condition) > 0 {
+	case len(condition) > 0:
 		whereClause, params = helpers.GenerateWhere(condition)
-	} else {
+	case len(orCondition) > 0:
 		whereClause, params = helpers.GenerateWhereOr(orCondition)
+	default:
+		whereClause = "1=1" // fallback: no condition, selects all
 	}
 
 	// Build and execute query
 	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s", selectFields, table, whereClause)
+	rows, err := db.Query(query, params...)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": err.Error(),
+		}
+	}
+	defer rows.Close()
+	columns, err := rows.Columns()
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": err.Error(),
+		}
+	}
+	var results []map[string]interface{}
+	for rows.Next() {
+		columnValues := make([]interface{}, len(columns))
+		columnPointers := make([]interface{}, len(columns))
+		for i := range columnValues {
+			columnPointers[i] = &columnValues[i]
+		}
+		if err := rows.Scan(columnPointers...); err != nil {
+			return map[string]interface{}{
+				"success": false,
+				"message": err.Error(),
+			}
+		}
+		rowMap := make(map[string]interface{})
+		for i, col := range columns {
+			val := columnPointers[i].(*interface{})
+			rowMap[col] = *val
+		}
+		results = append(results, rowMap)
+	}
+	// Convert []uint8 (MySQL bytes) to string for JSON compatibility
+	for i, row := range results {
+		newRow := make(map[string]interface{})
+		for k, v := range row {
+			if byteVal, ok := v.([]uint8); ok {
+				newRow[k] = string(byteVal)
+			} else {
+				newRow[k] = v
+			}
+		}
+		results[i] = newRow
+	}
+	if len(results) == 0 {
+		return map[string]interface{}{
+			"success": false,
+			"message": "No data found",
+		}
+	}
+	return map[string]interface{}{
+		"success": true,
+		"message": results,
+	}
+}
+
+// generate table relationship use mulitiple tables keys for table joining
+func ReadJoin(options map[string]interface{}) map[string]interface{} {
+	// Validate base table
+	baseTable, ok := options["table"].(string)
+	if !ok || baseTable == "" {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Missing or invalid base table name",
+		}
+	}
+
+	// Handle SELECT fields
+	selectFields := "*"
+	if sel, ok := options["select"]; ok {
+		selectFields = helpers.GenerateSelect(sel)
+	}
+
+	// Handle conditions
+	condition := map[string]interface{}{}
+	orCondition := map[string]interface{}{}
+	if cond, ok := options["condition"].(map[string]interface{}); ok {
+		condition = cond
+	}
+	if orCond, ok := options["or_condition"].(map[string]interface{}); ok {
+		orCondition = orCond
+	}
+
+	// Build WHERE clause
+	whereClause, params := "", []interface{}{}
+	switch {
+	case len(condition) > 0 && len(orCondition) > 0:
+		w1, p1 := helpers.GenerateWhere(condition)
+		w2, p2 := helpers.GenerateWhereOr(orCondition)
+		whereClause = fmt.Sprintf("( %s ) AND ( %s )", w1, w2)
+		params = append(params, p1...)
+		params = append(params, p2...)
+	case len(condition) > 0:
+		whereClause, params = helpers.GenerateWhere(condition)
+	case len(orCondition) > 0:
+		whereClause, params = helpers.GenerateWhereOr(orCondition)
+	default:
+		whereClause = "1=1"
+	}
+
+	// Handle JOINs (expects options["joins"] as array of map[string]interface{})
+	joinClause := ""
+	if joins, ok := options["joins"].([]interface{}); ok {
+		for _, j := range joins {
+			if joinMap, ok := j.(map[string]interface{}); ok {
+				joinType := "INNER JOIN"
+				if jt, ok := joinMap["type"].(string); ok {
+					joinType = jt
+				}
+				tableName, ok1 := joinMap["table"].(string)
+				onClause, ok2 := joinMap["on"].(string)
+				if ok1 && ok2 {
+					joinClause += fmt.Sprintf(" %s %s ON %s", joinType, tableName, onClause)
+				}
+			}
+		}
+	}
+	// Build query
+	query := fmt.Sprintf("SELECT %s FROM %s%s WHERE %s", selectFields, baseTable, joinClause, whereClause)
+
+	// Execute query
 	rows, err := db.Query(query, params...)
 	if err != nil {
 		return map[string]interface{}{
@@ -376,34 +500,34 @@ func Search(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 
-	// Handle SELECT fields
+	// Handle SELECT fields using helpers.GenerateSelect
 	selectFields := "*"
-	if sel, ok := options["select"].(map[string]interface{}); ok && len(sel) > 0 {
-		keys := make([]string, 0, len(sel))
-		for k := range sel {
-			keys = append(keys, k)
-		}
-		selectFields = strings.Join(keys, ", ")
+	if select_data, ok := options["select"]; ok {
+		selectFields = helpers.GenerateSelect(select_data)
 	}
 
 	// Build WHERE clause
 	var whereClause string
 	var params []interface{}
-	if len(condition) > 0 && len(orCondition) > 0 {
+
+	switch {
+	case len(condition) > 0 && len(orCondition) > 0:
 		where1, params1 := helpers.GenerateWhere(condition)
 		where2, params2 := helpers.GenerateWhereOr(orCondition)
 		whereClause = fmt.Sprintf("( %s ) AND ( %s )", where1, where2)
 		params = append(params, params1...)
 		params = append(params, params2...)
-	} else if len(condition) > 0 {
+	case len(condition) > 0:
 		whereClause, params = helpers.GenerateWhere(condition)
-	} else {
+	case len(orCondition) > 0:
 		whereClause, params = helpers.GenerateWhereOr(orCondition)
+	default:
+		whereClause = "1=1" // fallback: no condition, selects all
 	}
 
 	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s", selectFields, table, whereClause)
 
-	rows, err := db.Query(query)
+	rows, err := db.Query(query, params...)
 	if err != nil {
 		return map[string]interface{}{
 			"success": false,
@@ -457,20 +581,6 @@ func SearchBetween(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 
-	// Handle SELECT fields
-	selectFields := "*"
-	if sel, ok := options["select"].(map[string]interface{}); ok && len(sel) > 0 {
-		keys := make([]string, 0, len(sel))
-		for k := range sel {
-			keys = append(keys, k)
-		}
-		selectFields = strings.Join(keys, ", ")
-	}
-
-	// Base query and params
-	params := []interface{}{start, end}
-	var whereClause string
-
 	// Parse "condition" and "or_condition"
 	condition := make(map[string]interface{})
 	orCondition := make(map[string]interface{})
@@ -488,17 +598,29 @@ func SearchBetween(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 
+	// Handle SELECT fields using helpers.GenerateSelect
+	selectFields := "*"
+	if select_data, ok := options["select"]; ok {
+		selectFields = helpers.GenerateSelect(select_data)
+	}
+
 	// Build WHERE clause
-	if len(condition) > 0 && len(orCondition) > 0 {
+	params := []interface{}{start, end}
+	var whereClause string
+
+	switch {
+	case len(condition) > 0 && len(orCondition) > 0:
 		where1, params1 := helpers.GenerateWhere(condition)
 		where2, params2 := helpers.GenerateWhereOr(orCondition)
 		whereClause = fmt.Sprintf("( %s ) AND ( %s )", where1, where2)
 		params = append(params, params1...)
 		params = append(params, params2...)
-	} else if len(condition) > 0 {
+	case len(condition) > 0:
 		whereClause, params = helpers.GenerateWhere(condition)
-	} else {
+	case len(orCondition) > 0:
 		whereClause, params = helpers.GenerateWhereOr(orCondition)
+	default:
+		whereClause = "1=1" // fallback: no condition, selects all
 	}
 
 	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s BETWEEN ? AND ? AND %s", selectFields, table, column, whereClause)
@@ -542,8 +664,9 @@ func SearchBetween(options map[string]interface{}) map[string]interface{} {
 	}
 }
 
-// List returns paginated results from a table
+// List returns paginated results from a table with optional WHERE conditions
 func List(options map[string]interface{}) map[string]interface{} {
+	// Validate table
 	table, ok := options["table"].(string)
 	if !ok || table == "" {
 		return map[string]interface{}{
@@ -551,32 +674,60 @@ func List(options map[string]interface{}) map[string]interface{} {
 			"message": "Table name is required",
 		}
 	}
-	pageFloat, ok := options["page"].(float64) // JSON numbers decode to float64
+
+	// Conditions
+	condition, _ := options["condition"].(map[string]interface{})
+	orCondition, _ := options["or_condition"].(map[string]interface{})
+
+	// Pagination
+	pageFloat, ok := options["page"].(float64)
 	if !ok || pageFloat <= 0 {
-		return map[string]interface{}{
-			"success": false,
-			"message": "Page number must be a positive integer",
-		}
+		pageFloat = 1
 	}
-	page := int(pageFloat)
 	pageSizeFloat, ok := options["page_size"].(float64)
 	if !ok || pageSizeFloat <= 0 {
-		return map[string]interface{}{
-			"success": false,
-			"message": "Page size must be a positive integer",
-		}
+		pageSizeFloat = 10
 	}
+	page := int(pageFloat)
 	pageSize := int(pageSizeFloat)
 	offset := (page - 1) * pageSize
-	// Extract condition if provided, expect a map[string]interface{}
-	condition := map[string]interface{}{}
-	if condRaw, exists := options["condition"]; exists {
-		if condMap, ok := condRaw.(map[string]interface{}); ok {
-			condition = condMap
+
+	// Handle SELECT fields
+	selectFields := "*"
+	if selectData, ok := options["select"]; ok {
+		selectFields = helpers.GenerateSelect(selectData)
+	}
+
+	// Build WHERE clause
+	var whereClause string
+	var params []interface{}
+	switch {
+	case len(condition) > 0 && len(orCondition) > 0:
+		where1, params1 := helpers.GenerateWhere(condition)
+		where2, params2 := helpers.GenerateWhereOr(orCondition)
+		whereClause = fmt.Sprintf("( %s ) AND ( %s )", where1, where2)
+		params = append(params, params1...)
+		params = append(params, params2...)
+	case len(condition) > 0:
+		whereClause, params = helpers.GenerateWhere(condition)
+	case len(orCondition) > 0:
+		whereClause, params = helpers.GenerateWhereOr(orCondition)
+	default:
+		whereClause = "1=1"
+	}
+
+	// Query total records for pagination
+	totalQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s", table, whereClause)
+	var totalRecords int
+	if err := db.QueryRow(totalQuery, params...).Scan(&totalRecords); err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": err.Error(),
 		}
 	}
-	whereClause, params := helpers.GenerateWhere(condition)
-	query := fmt.Sprintf("SELECT * FROM %s WHERE %s LIMIT ? OFFSET ?", table, whereClause)
+
+	// Query actual data with LIMIT/OFFSET
+	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s LIMIT ? OFFSET ?", selectFields, table, whereClause)
 	params = append(params, pageSize, offset)
 	rows, err := db.Query(query, params...)
 	if err != nil {
@@ -586,6 +737,7 @@ func List(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 	defer rows.Close()
+
 	columns, err := rows.Columns()
 	if err != nil {
 		return map[string]interface{}{
@@ -593,6 +745,7 @@ func List(options map[string]interface{}) map[string]interface{} {
 			"message": err.Error(),
 		}
 	}
+
 	var results []map[string]interface{}
 	for rows.Next() {
 		columnValues := make([]interface{}, len(columns))
@@ -606,54 +759,71 @@ func List(options map[string]interface{}) map[string]interface{} {
 				"message": err.Error(),
 			}
 		}
+
 		rowMap := make(map[string]interface{})
 		for i, col := range columns {
 			val := columnPointers[i].(*interface{})
-			rowMap[col] = *val
+			if byteVal, ok := (*val).([]uint8); ok {
+				rowMap[col] = string(byteVal)
+			} else {
+				rowMap[col] = *val
+			}
 		}
 		results = append(results, rowMap)
 	}
-	for i, row := range results {
-		newRow := make(map[string]interface{})
-		for k, v := range row {
-			if byteVal, ok := v.([]uint8); ok {
-				newRow[k] = string(byteVal)
-			} else {
-				newRow[k] = v
-			}
-		}
-		results[i] = newRow
+
+	// Build pagination metadata
+	totalPages := totalRecords / pageSize
+	if totalRecords%pageSize > 0 {
+		totalPages++
 	}
-	if len(results) == 0 {
-		return map[string]interface{}{
-			"success": false,
-			"message": "No data found",
-		}
+	pages := make([]int, totalPages)
+	for i := 0; i < totalPages; i++ {
+		pages[i] = i + 1
+	}
+	// Calculate previous and next page
+	var previous *int
+	if page > 1 {
+		prev := page - 1
+		previous = &prev
+	}
+
+	var next *int
+	if page < totalPages {
+		nxt := page + 1
+		next = &nxt
 	}
 	return map[string]interface{}{
 		"success": true,
-		"message": results,
+		"message": map[string]interface{}{
+			"data":         results,
+			"totalRecords": totalRecords,
+			"page":         page,
+			"pageSize":     pageSize,
+			"totalPages":   totalPages,
+			"previous":     previous,
+			"next":         next,
+			"pages":        pages,
+		},
 	}
 }
 
 // ListAll returns all records from a table
 func ListAll(options map[string]interface{}) map[string]interface{} {
-	tableRaw, ok := options["table"]
-	if !ok {
+	table, ok := options["table"].(string)
+	if !ok || table == "" {
 		return map[string]interface{}{
 			"success": false,
 			"message": "Table name is required",
 		}
 	}
-	table, ok := tableRaw.(string)
-	if !ok || table == "" {
-		return map[string]interface{}{
-			"success": false,
-			"message": "Invalid table name",
-		}
+	// Handle SELECT fields using helpers.GenerateSelect
+	selectFields := "*"
+	if select_data, ok := options["select"]; ok {
+		selectFields = helpers.GenerateSelect(select_data)
 	}
 
-	query := fmt.Sprintf("SELECT * FROM %s", table)
+	query := fmt.Sprintf("SELECT %s FROM %s", selectFields, table)
 	rows, err := db.Query(query)
 	if err != nil {
 		return map[string]interface{}{
@@ -720,21 +890,16 @@ func ListAll(options map[string]interface{}) map[string]interface{} {
 
 // create mysql
 func Create(options map[string]interface{}) map[string]interface{} {
-	tableRaw, ok := options["table"]
-	if !ok {
+	// Validate table
+	table, ok := options["table"].(string)
+	if !ok || table == "" {
 		return map[string]interface{}{
 			"success": false,
 			"message": "Table name is required",
 		}
 	}
-	table, ok := tableRaw.(string)
-	if !ok || table == "" {
-		return map[string]interface{}{
-			"success": false,
-			"message": "Invalid table name",
-		}
-	}
 
+	// Validate data
 	dataRaw, ok := options["data"]
 	if !ok {
 		return map[string]interface{}{
@@ -750,22 +915,12 @@ func Create(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 
-	// Generate unique_id and add to data
-	uniqueID := helpers.GenerateUniqueID()
-	data["unique_id"] = uniqueID
-
-	// Build query: INSERT INTO table SET col1=?, col2=?, ...
-	columns := []string{}
-	values := []interface{}{}
-
-	for col, val := range data {
-		columns = append(columns, fmt.Sprintf("%s = ?", col))
-		values = append(values, val)
-	}
-	query := fmt.Sprintf("INSERT INTO %s SET %s", table, strings.Join(columns, ", "))
+	// Build SET clause
+	setClause, params := helpers.GenerateSet(data)
+	query := fmt.Sprintf("INSERT INTO %s SET %s", table, setClause)
 
 	// Execute query
-	result, err := db.Exec(query, values...)
+	result, err := db.Exec(query, params...)
 	if err != nil {
 		return map[string]interface{}{
 			"success": false,
@@ -773,7 +928,8 @@ func Create(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 
-	rowsAffected, err := result.RowsAffected()
+	// Get last insert ID
+	lastID, err := result.LastInsertId()
 	if err != nil {
 		return map[string]interface{}{
 			"success": false,
@@ -781,19 +937,15 @@ func Create(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 
-	if rowsAffected > 0 {
-		return map[string]interface{}{
-			"success": true,
-			"message": map[string]interface{}{
-				"unique_id": uniqueID,
-				"data":      data,
-			},
-		}
-	}
+	// Add id to the original data map
+	data["id"] = lastID
 
 	return map[string]interface{}{
-		"success": false,
-		"message": "Failed to insert data",
+		"success": true,
+		"message": map[string]interface{}{
+			"id":   lastID,
+			"data": data,
+		},
 	}
 }
 
@@ -880,18 +1032,11 @@ func CreateBulk(options map[string]interface{}) map[string]interface{} {
 // update mysql
 func Update(options map[string]interface{}) map[string]interface{} {
 	// Extract and validate table name
-	tableRaw, ok := options["table"]
-	if !ok {
-		return map[string]interface{}{
-			"success": false,
-			"message": "Table name is required",
-		}
-	}
-	table, ok := tableRaw.(string)
+	table, ok := options["table"].(string)
 	if !ok || table == "" {
 		return map[string]interface{}{
 			"success": false,
-			"message": "Invalid table name",
+			"message": "Table name is required",
 		}
 	}
 	// Extract and validate data
@@ -925,11 +1070,12 @@ func Update(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 	// Build SET clause and WHERE clause
-	setClause := helpers.GenerateSet(data)
+	setClause, setparams := helpers.GenerateSet(data)
 	whereClause, whereParams := helpers.GenerateWhere(condition)
 	// Build parameters in correct order: data values first, then condition values
 	var params []interface{}
 	params = append(params, whereParams...)
+	params = append(params, setparams...)
 	// Construct final SQL query
 	query := fmt.Sprintf("UPDATE %s SET %s WHERE %s", table, setClause, whereClause)
 	// Execute query
@@ -1005,13 +1151,12 @@ func UpdateBulk(options []map[string]interface{}) map[string]interface{} {
 // Delete mysql
 func Delete(options map[string]interface{}) map[string]interface{} {
 	// Validate table name
-	tableRaw, ok := options["table"]
-	if !ok {
-		return map[string]interface{}{"success": false, "message": "Table name is required"}
-	}
-	table, ok := tableRaw.(string)
+	table, ok := options["table"].(string)
 	if !ok || table == "" {
-		return map[string]interface{}{"success": false, "message": "Invalid table name"}
+		return map[string]interface{}{
+			"success": false,
+			"message": "Table name is required",
+		}
 	}
 
 	// Validate condition

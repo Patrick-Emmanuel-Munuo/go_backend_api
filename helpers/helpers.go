@@ -592,20 +592,42 @@ func GenerateLike(like map[string]interface{}) (string, []interface{}) {
 }
 
 // UpdateSet builds `SET field1=?, field2=?`
-func GenerateSet(set map[string]interface{}) string {
+func GenerateSet2(set map[string]interface{}) string {
 	var parts []string
 	for key := range set {
 		parts = append(parts, fmt.Sprintf("%s = ?", EscapeId(key)))
 	}
 	return strings.Join(parts, ", ")
 }
+func GenerateSet(set map[string]interface{}) (string, []interface{}) {
+	var parts []string
+	var params []interface{}
+	for key := range set {
+		parts = append(parts, fmt.Sprintf("%s = ?", EscapeId(key)))
+	}
+	return strings.Join(parts, ", "), params
+}
 
 // Select generate
-func GenerateSelect(fields []string) string {
-	if len(fields) == 0 {
+func GenerateSelect(fields interface{}) string {
+	var strFields []string
+
+	switch v := fields.(type) {
+	case []string:
+		strFields = v
+	case []interface{}:
+		strFields = make([]string, len(v))
+		for i, f := range v {
+			strFields[i], _ = f.(string)
+		}
+	default:
+		return "*" // fallback if unsupported type
+	}
+
+	if len(strFields) == 0 {
 		return "*"
 	}
-	return strings.Join(EscapeIdentifiers(fields), ", ")
+	return strings.Join(EscapeIds(strFields), ", ")
 }
 
 // EscapeId safely escapes table/column names using backticks
@@ -617,7 +639,7 @@ func EscapeId(identifier string) string {
 }
 
 // EscapeIdentifiers for multiple fields
-func EscapeIdentifiers(identifiers []string) []string {
+func EscapeIds(identifiers []string) []string {
 	escaped := make([]string, len(identifiers))
 	for i, id := range identifiers {
 		escaped[i] = EscapeId(id)

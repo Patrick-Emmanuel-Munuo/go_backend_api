@@ -86,6 +86,22 @@ func Router_mysql(router *gin.Engine) {
 			}
 			c.JSON(status, response)
 		})
+		mysql.POST("/joint_read", helpers.AuthMiddleware(), func(c *gin.Context) {
+			var options map[string]interface{}
+			if err := c.ShouldBindJSON(&options); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"message": "Invalid JSON body",
+				})
+				return
+			}
+			response := controllers.ReadJoin(options)
+			status := http.StatusInternalServerError
+			if success, ok := response["success"].(bool); ok && success {
+				status = http.StatusOK
+			}
+			c.JSON(status, response)
+		})
 		mysql.POST("/read-bulk", helpers.AuthMiddleware(), func(c *gin.Context) {
 			var options []map[string]interface{}
 			if err := c.ShouldBindJSON(&options); err != nil {
@@ -288,6 +304,38 @@ func Router_mysql(router *gin.Engine) {
 				return
 			}
 			response := controllers.Backup(options)
+			status := http.StatusInternalServerError
+			if success, ok := response["success"].(bool); ok && success {
+				status = http.StatusOK
+			}
+			c.JSON(status, response)
+		})
+		mysql.POST("/query", helpers.AuthMiddleware(), func(c *gin.Context) {
+			var options map[string]interface{}
+			if err := c.ShouldBindJSON(&options); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"message": "Invalid JSON body",
+				})
+				return
+			}
+			response := controllers.Query(options)
+			status := http.StatusInternalServerError
+			if success, ok := response["success"].(bool); ok && success {
+				status = http.StatusOK
+			}
+			c.JSON(status, response)
+		})
+		mysql.POST("/database_handle", helpers.AuthMiddleware(), func(c *gin.Context) {
+			var options map[string]interface{}
+			if err := c.ShouldBindJSON(&options); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"message": "Invalid JSON body",
+				})
+				return
+			}
+			response := controllers.DatabaseHandler(options)
 			status := http.StatusInternalServerError
 			if success, ok := response["success"].(bool); ok && success {
 				status = http.StatusOK
