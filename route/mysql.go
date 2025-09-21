@@ -52,9 +52,8 @@ func Router_mysql(router *gin.Engine) {
 					messages[0]["user_browser"] = userBrowser
 					// Generate JWT token for the user
 					authResult := helpers.Authenticate(map[string]interface{}{
-						"id":       messages[0]["id"],
-						"username": messages[0]["user_name"],
-						"role":     messages[0]["role"],
+						"id":        messages[0]["id"],
+						"user_name": messages[0]["user_name"],
 					})
 					if successToken, ok := authResult["success"].(bool); ok && successToken {
 						// Attach token to user record

@@ -79,17 +79,57 @@ func UpdateEnvVars() {
 	SmsApiKey = getEnvValue("SMS_API_KEY", "").(string)
 	SmsSenderId = getEnvValue("SMS_SENDER_ID", "").(string)
 	JwtKey = getEnvValue("JWT_KEY", "").(string)
-	EnableEncripted = getEnvValue("Encripted", false).(bool)
+	EnableEncripted = getEnvValue("EnableEncripted", false).(bool)
 	encryptionKey = []byte(getEnvValue("ENCRYPTION_KEY", "1234567890123456").(string))
 	initializationVector = []byte(getEnvValue("ENCRYPTION_INITIALIZE", "1234567890123456").(string))
+}
+
+func getEnvValue(key string, fallback interface{}) interface{} {
+	val := os.Getenv(key)
+	if val == "" {
+		//LogJSON(false, fmt.Sprintf("Environment variable %q not set", key))
+		// Return zero value based on type
+		switch fallback.(type) {
+		case int:
+			return 0
+		case bool:
+			return false
+		case string:
+			return ""
+		default:
+			return nil
+		}
+	}
+
+	switch fallback.(type) {
+	case int:
+		intVal, err := strconv.Atoi(val)
+		if err != nil {
+			//LogJSON(false, fmt.Sprintf("Invalid int for environment variable %q: %q", key, val))
+			return 0
+		}
+		return intVal
+	case bool:
+		boolVal, err := strconv.ParseBool(val)
+		if err != nil {
+			//LogJSON(false, fmt.Sprintf("Invalid bool for environment variable %q: %q", key, val))
+			return false
+		}
+		return boolVal
+	case string:
+		return val
+	default:
+		LogJSON(false, fmt.Sprintf("Unsupported type for environment variable %q", key))
+		return nil
+	}
 }
 
 // LogJSON  prints logs in JSON format with optional colors
 func LogJSON(success bool, message string) {
 	entry := map[string]interface{}{
-		"timestamp": time.Now().Format("Mon 01/02/2006 15:04:05.000"),
-		"success":   success,
-		"message":   message,
+		//"timestamp": time.Now().UTC().Format("2006-01-02 15:04:05"),
+		"success": success,
+		"message": message,
 	}
 
 	if data, err := json.Marshal(entry); err == nil {
@@ -103,7 +143,7 @@ func LogJSON(success bool, message string) {
 	}
 }
 
-// StartServer starts Gin HTTP/HTTPS server with Zap logging and graceful shutdown
+// StartServer starts Gin HTTP/HTTPS server
 func StartServer(router *gin.Engine) map[string]interface{} {
 	secure := ServerSecurity == "https"
 	addr := fmt.Sprintf("%s:%d", ServerDomain, ServerPort)
@@ -113,7 +153,7 @@ func StartServer(router *gin.Engine) map[string]interface{} {
 		if !filepath.IsAbs(SslCertificate) {
 			absCert, err := filepath.Abs(SslCertificate)
 			if err != nil {
-				log.Printf(`{"success": false, "message": "Invalid SSL_CERTIFICATE path: %v, falling back to HTTP", err}`)
+				LogJSON(false, fmt.Sprintf("Invalid SSL_CERTIFICATE path: %v, falling back to HTTP", err))
 				secure = false
 			} else {
 				SslCertificate = absCert
@@ -122,18 +162,18 @@ func StartServer(router *gin.Engine) map[string]interface{} {
 		if !filepath.IsAbs(SslKey) {
 			absKey, err := filepath.Abs(SslKey)
 			if err != nil {
-				log.Printf(`{"success": false, "message": "Invalid SSL_KEY path: %v, falling back to HTTP", err}`)
+				LogJSON(false, fmt.Sprintf("Invalid SSL_CERTIFICATE path: %v, falling back to HTTP", err))
 				secure = false
 			} else {
 				SslKey = absKey
 			}
 		}
 		if _, err := os.Stat(SslCertificate); os.IsNotExist(err) {
-			log.Printf(`{"success": false, "message": "SSL certificate not found at %s, falling back to HTTP"}`, SslCertificate)
+			LogJSON(false, fmt.Sprintf("SSL certificate not found at %s, falling back to HTTP", SslCertificate))
 			secure = false
 		}
 		if _, err := os.Stat(SslKey); os.IsNotExist(err) {
-			log.Printf(`{"success": false, "message": "SSL key not found at %s, falling back to HTTP"}`, SslKey)
+			LogJSON(false, fmt.Sprintf("SSL key not found at %s, falling back to HTTP", SslKey))
 			secure = false
 		}
 	}
@@ -150,7 +190,7 @@ func StartServer(router *gin.Engine) map[string]interface{} {
 
 	// Start server in a goroutine
 	go func() {
-		log.Printf(`{"success": true, "message": "Server running at %s://%s [PID: %d]"}`, protocol, addr, os.Getpid())
+		LogJSON(true, fmt.Sprintf("Server running at %s://%s [PID: %d]", protocol, addr, os.Getpid()))
 		var err error
 		if secure {
 			err = srv.ListenAndServeTLS(SslCertificate, SslKey)
@@ -158,7 +198,7 @@ func StartServer(router *gin.Engine) map[string]interface{} {
 			err = srv.ListenAndServe()
 		}
 		if err != nil && err != http.ErrServerClosed {
-			log.Printf(`{"success": false, "message": "Server error: %v"}`, err)
+			LogJSON(false, fmt.Sprintf("Server error: %v", err))
 		}
 	}()
 
@@ -166,22 +206,18 @@ func StartServer(router *gin.Engine) map[string]interface{} {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, os.Kill, syscall.SIGTERM)
 	<-quit
-	log.Printf(`{"success": true, "message": "Shutting down server..."}`)
-	// The context is used to inform the server it has 10 seconds to finish
-	// the request it is currently handling
+	LogJSON(true, "Shutting down server...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Printf(`{"success": false, "message": "Server forced to shutdown: %v"}`, err)
+		LogJSON(false, fmt.Sprintf("Server forced to shutdown: %v", err))
 	} else {
-		log.Printf(`{"success": true, "message": "Server exited gracefully"}`)
+		LogJSON(true, "Server exited gracefully")
 	}
-
 	return map[string]interface{}{
-		"success":  true,
-		"protocol": protocol,
-		"message":  fmt.Sprintf("Server running at %s://%s [PID: %d]", protocol, addr, os.Getpid()),
+		"success": true,
+		"message": fmt.Sprintf("Server running at %s://%s [PID: %d]", protocol, addr, os.Getpid()),
 	}
 }
 
@@ -329,21 +365,21 @@ func Authenticate(data map[string]interface{}) map[string]interface{} {
 	//key
 	var jwtKey = []byte(JwtKey)
 	// Ensure required fields exist
-	username, uOk := data["username"].(string)
+	user_name, uOk := data["user_name"].(string)
 	id, idOk := data["id"]
 	if !uOk || !idOk {
 		return map[string]interface{}{
 			"success": false,
-			"message": "Authentication failed: username and id are required",
+			"message": "Authentication failed: user_name and id are required",
 		}
 	}
 
 	// Create JWT claims 1h expiration
-	expireTime := time.Now().Add(1 * time.Hour)
+	expireTime := time.Now().Add(12 * time.Hour)
 	options := jwt.MapClaims{
 		"exp":          expireTime.Unix(),
 		"expired_time": expireTime.Format(time.RFC3339),
-		"user_name":    username,
+		"user_name":    user_name,
 		"id":           id,
 		"issued_at":    time.Now().Unix(),
 		"issuer":       "go_backend_api",
@@ -420,6 +456,8 @@ func AuthMiddleware() gin.HandlerFunc {
 			authHeader := c.GetHeader("Authorization")
 			if strings.HasPrefix(authHeader, "Bearer ") {
 				access_token = strings.TrimPrefix(authHeader, "Bearer ")
+			} else if authHeader != "" {
+				access_token = authHeader
 			}
 		}
 
@@ -434,28 +472,6 @@ func AuthMiddleware() gin.HandlerFunc {
 		// Token is valid, proceed
 
 		c.Next()
-	}
-}
-
-func getEnvValue(key string, fallback interface{}) interface{} {
-	val := os.Getenv(key)
-	if val == "" {
-		log.Printf(`{"success": false,"message": "Environment variable %q not set, using default: %v"}`, key, fallback)
-		return fallback
-	}
-	switch fallback.(type) {
-	case int:
-		intVal, err := strconv.Atoi(val)
-		if err != nil {
-			log.Printf(`{"success": false,"message": "Invalid int for %q: %q, using default: %v"}`, key, val, fallback)
-			return fallback
-		}
-		return intVal
-	case string:
-		return val
-	default:
-		log.Printf(`{"success": false,"message": "Unsupported type for key %q, using default: %v"}`, key, fallback)
-		return fallback
 	}
 }
 
