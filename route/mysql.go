@@ -86,7 +86,7 @@ func Router_mysql(router *gin.Engine) {
 			}
 			c.JSON(status, response)
 		})
-		mysql.POST("/joint_read", helpers.AuthMiddleware(), func(c *gin.Context) {
+		mysql.POST("/joint-read", helpers.AuthMiddleware(), func(c *gin.Context) {
 			var options map[string]interface{}
 			if err := c.ShouldBindJSON(&options); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{
@@ -331,7 +331,7 @@ func Router_mysql(router *gin.Engine) {
 			}
 			c.JSON(status, response)
 		})
-		mysql.POST("/database_handle", helpers.AuthMiddleware(), func(c *gin.Context) {
+		mysql.POST("/database-handle", helpers.AuthMiddleware(), func(c *gin.Context) {
 			var options map[string]interface{}
 			if err := c.ShouldBindJSON(&options); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{

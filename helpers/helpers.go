@@ -248,7 +248,7 @@ func Encript(data map[string]interface{}) map[string]interface{} {
 
 	// If encryption is disabled, return JSON string
 	if !EnableEncripted {
-		data["message"] = string(jsonBytes)
+		//data["message"] = string(jsonBytes)
 		return data
 	}
 	// Ensure key and IV are present and valid
