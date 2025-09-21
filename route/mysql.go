@@ -82,7 +82,7 @@ func Router_mysql(router *gin.Engine) {
 
 				response["message"] = messages
 			}
-
+			fmt.Println(response)
 			// Encrypt the response if encryption is enabled
 			c.JSON(status, helpers.Encript(response))
 		})
@@ -96,33 +96,14 @@ func Router_mysql(router *gin.Engine) {
 				})
 				return
 			}
-			// Decrypt incoming data
-			options := helpers.Decript(body)
-			if success, ok := options["success"].(bool); !ok || !success {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Failed to decrypt data. Check encryption keys.",
-				})
-				return
-			}
-
-			message, ok := options["message"].(map[string]interface{})
-			if !ok {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid decrypted payload",
-				})
-				return
-			}
-
 			// Query user from database
-			response := controllers.Read(message)
+			response := controllers.Read(body)
 			status := http.StatusInternalServerError
 			if success, ok := response["success"].(bool); ok && success {
 				status = http.StatusOK
 			}
 			// Encrypt the response if encryption is enabled
-			c.JSON(status, helpers.Encript(response))
+			c.JSON(status, response)
 		})
 		mysql.POST("/joint-read", helpers.AuthMiddleware(), func(c *gin.Context) {
 			var body map[string]interface{}
@@ -133,26 +114,7 @@ func Router_mysql(router *gin.Engine) {
 				})
 				return
 			}
-			// Decrypt incoming data
-			options := helpers.Decript(body)
-			if success, ok := options["success"].(bool); !ok || !success {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Failed to decrypt data. Check encryption keys.",
-				})
-				return
-			}
-
-			message, ok := options["message"].(map[string]interface{})
-			if !ok {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid decrypted payload",
-				})
-				return
-			}
-
-			response := controllers.ReadJoin(message)
+			response := controllers.ReadJoin(body)
 			status := http.StatusInternalServerError
 			if success, ok := response["success"].(bool); ok && success {
 				status = http.StatusOK
@@ -161,7 +123,7 @@ func Router_mysql(router *gin.Engine) {
 			c.JSON(status, helpers.Encript(response))
 		})
 		mysql.POST("/read-bulk", helpers.AuthMiddleware(), func(c *gin.Context) {
-			var body map[string]interface{}
+			var body []map[string]interface{}
 			if err := c.ShouldBindJSON(&body); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{
 					"success": false,
@@ -169,26 +131,7 @@ func Router_mysql(router *gin.Engine) {
 				})
 				return
 			}
-			// Decrypt incoming data
-			options := helpers.Decript(body)
-			if success, ok := options["success"].(bool); !ok || !success {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Failed to decrypt data. Check encryption keys.",
-				})
-				return
-			}
-
-			message, ok := options["message"].([]map[string]interface{})
-			if !ok {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid decrypted payload",
-				})
-				return
-			}
-
-			response := controllers.ReadBulk(message)
+			response := controllers.ReadBulk(body)
 			status := http.StatusInternalServerError
 			if success, ok := response["success"].(bool); ok && success {
 				status = http.StatusOK
@@ -205,26 +148,7 @@ func Router_mysql(router *gin.Engine) {
 				})
 				return
 			}
-			// Decrypt incoming data
-			options := helpers.Decript(body)
-			if success, ok := options["success"].(bool); !ok || !success {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Failed to decrypt data. Check encryption keys.",
-				})
-				return
-			}
-
-			message, ok := options["message"].(map[string]interface{})
-			if !ok {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid decrypted payload",
-				})
-				return
-			}
-
-			response := controllers.List(message)
+			response := controllers.List(body)
 			status := http.StatusInternalServerError
 			if success, ok := response["success"].(bool); ok && success {
 				status = http.StatusOK
@@ -241,26 +165,8 @@ func Router_mysql(router *gin.Engine) {
 				})
 				return
 			}
-			// Decrypt incoming data
-			options := helpers.Decript(body)
-			if success, ok := options["success"].(bool); !ok || !success {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Failed to decrypt data. Check encryption keys.",
-				})
-				return
-			}
 
-			message, ok := options["message"].(map[string]interface{})
-			if !ok {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid decrypted payload",
-				})
-				return
-			}
-
-			response := controllers.ListAll(message)
+			response := controllers.ListAll(body)
 			// Encrypt response before sending
 			encryptedResponse := helpers.Encript(response)
 			status := http.StatusInternalServerError
@@ -278,26 +184,8 @@ func Router_mysql(router *gin.Engine) {
 				})
 				return
 			}
-			// Decrypt incoming data
-			options := helpers.Decript(body)
-			if success, ok := options["success"].(bool); !ok || !success {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Failed to decrypt data. Check encryption keys.",
-				})
-				return
-			}
 
-			message, ok := options["message"].(map[string]interface{})
-			if !ok {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid decrypted payload",
-				})
-				return
-			}
-
-			response := controllers.Update(message)
+			response := controllers.Update(body)
 			status := http.StatusInternalServerError
 			if success, ok := response["success"].(bool); ok && success {
 				status = http.StatusOK
@@ -305,7 +193,7 @@ func Router_mysql(router *gin.Engine) {
 			c.JSON(status, response)
 		})
 		mysql.POST("/update-bulk", helpers.AuthMiddleware(), func(c *gin.Context) {
-			var body map[string]interface{}
+			var body []map[string]interface{}
 			if err := c.ShouldBindJSON(&body); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{
 					"success": false,
@@ -313,26 +201,7 @@ func Router_mysql(router *gin.Engine) {
 				})
 				return
 			}
-			// Decrypt incoming data
-			options := helpers.Decript(body)
-			if success, ok := options["success"].(bool); !ok || !success {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Failed to decrypt data. Check encryption keys.",
-				})
-				return
-			}
-
-			message, ok := options["message"].([]map[string]interface{})
-			if !ok {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid decrypted payload",
-				})
-				return
-			}
-
-			response := controllers.UpdateBulk(message)
+			response := controllers.UpdateBulk(body)
 			status := http.StatusInternalServerError
 			if success, ok := response["success"].(bool); ok && success {
 				status = http.StatusOK
@@ -349,26 +218,8 @@ func Router_mysql(router *gin.Engine) {
 				})
 				return
 			}
-			// Decrypt incoming data
-			options := helpers.Decript(body)
-			if success, ok := options["success"].(bool); !ok || !success {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Failed to decrypt data. Check encryption keys.",
-				})
-				return
-			}
 
-			message, ok := options["message"].(map[string]interface{})
-			if !ok {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid decrypted payload",
-				})
-				return
-			}
-
-			response := controllers.Create(message)
+			response := controllers.Create(body)
 			status := http.StatusInternalServerError
 			if success, ok := response["success"].(bool); ok && success {
 				status = http.StatusOK
@@ -386,26 +237,8 @@ func Router_mysql(router *gin.Engine) {
 				})
 				return
 			}
-			// Decrypt incoming data
-			options := helpers.Decript(body)
-			if success, ok := options["success"].(bool); !ok || !success {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Failed to decrypt data. Check encryption keys.",
-				})
-				return
-			}
 
-			message, ok := options["message"].(map[string]interface{})
-			if !ok {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid decrypted payload",
-				})
-				return
-			}
-
-			response := controllers.CreateBulk(message)
+			response := controllers.CreateBulk(body)
 			status := http.StatusInternalServerError
 			if success, ok := response["success"].(bool); ok && success {
 				status = http.StatusOK
@@ -422,26 +255,8 @@ func Router_mysql(router *gin.Engine) {
 				})
 				return
 			}
-			// Decrypt incoming data
-			options := helpers.Decript(body)
-			if success, ok := options["success"].(bool); !ok || !success {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Failed to decrypt data. Check encryption keys.",
-				})
-				return
-			}
 
-			message, ok := options["message"].(map[string]interface{})
-			if !ok {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid decrypted payload",
-				})
-				return
-			}
-
-			response := controllers.Delete(message)
+			response := controllers.Delete(body)
 			status := http.StatusInternalServerError
 			if success, ok := response["success"].(bool); ok && success {
 				status = http.StatusOK
@@ -450,7 +265,7 @@ func Router_mysql(router *gin.Engine) {
 			c.JSON(status, helpers.Encript(response))
 		})
 		mysql.POST("/delete-bulk", helpers.AuthMiddleware(), func(c *gin.Context) {
-			var body map[string]interface{}
+			var body []map[string]interface{}
 			if err := c.ShouldBindJSON(&body); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{
 					"success": false,
@@ -458,26 +273,8 @@ func Router_mysql(router *gin.Engine) {
 				})
 				return
 			}
-			// Decrypt incoming data
-			options := helpers.Decript(body)
-			if success, ok := options["success"].(bool); !ok || !success {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Failed to decrypt data. Check encryption keys.",
-				})
-				return
-			}
 
-			message, ok := options["message"].([]map[string]interface{})
-			if !ok {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid decrypted payload",
-				})
-				return
-			}
-
-			response := controllers.DelateBulk(message)
+			response := controllers.DelateBulk(body)
 			status := http.StatusInternalServerError
 			if success, ok := response["success"].(bool); ok && success {
 				status = http.StatusOK
@@ -494,26 +291,8 @@ func Router_mysql(router *gin.Engine) {
 				})
 				return
 			}
-			// Decrypt incoming data
-			options := helpers.Decript(body)
-			if success, ok := options["success"].(bool); !ok || !success {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Failed to decrypt data. Check encryption keys.",
-				})
-				return
-			}
 
-			message, ok := options["message"].(map[string]interface{})
-			if !ok {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid decrypted payload",
-				})
-				return
-			}
-
-			response := controllers.Search(message)
+			response := controllers.Search(body)
 			status := http.StatusInternalServerError
 			if success, ok := response["success"].(bool); ok && success {
 				status = http.StatusOK
@@ -530,26 +309,8 @@ func Router_mysql(router *gin.Engine) {
 				})
 				return
 			}
-			// Decrypt incoming data
-			options := helpers.Decript(body)
-			if success, ok := options["success"].(bool); !ok || !success {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Failed to decrypt data. Check encryption keys.",
-				})
-				return
-			}
 
-			message, ok := options["message"].(map[string]interface{})
-			if !ok {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid decrypted payload",
-				})
-				return
-			}
-
-			response := controllers.SearchBetween(message)
+			response := controllers.SearchBetween(body)
 			status := http.StatusInternalServerError
 			if success, ok := response["success"].(bool); ok && success {
 				status = http.StatusOK
@@ -566,26 +327,8 @@ func Router_mysql(router *gin.Engine) {
 				})
 				return
 			}
-			// Decrypt incoming data
-			options := helpers.Decript(body)
-			if success, ok := options["success"].(bool); !ok || !success {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Failed to decrypt data. Check encryption keys.",
-				})
-				return
-			}
 
-			message, ok := options["message"].(map[string]interface{})
-			if !ok {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid decrypted payload",
-				})
-				return
-			}
-
-			response := controllers.Count(message)
+			response := controllers.Count(body)
 			status := http.StatusInternalServerError
 			if success, ok := response["success"].(bool); ok && success {
 				status = http.StatusOK
@@ -594,7 +337,7 @@ func Router_mysql(router *gin.Engine) {
 			c.JSON(status, helpers.Encript(response))
 		})
 		mysql.POST("/count-bulk", helpers.AuthMiddleware(), func(c *gin.Context) {
-			var body map[string]interface{}
+			var body []map[string]interface{}
 			if err := c.ShouldBindJSON(&body); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{
 					"success": false,
@@ -602,26 +345,8 @@ func Router_mysql(router *gin.Engine) {
 				})
 				return
 			}
-			// Decrypt incoming data
-			options := helpers.Decript(body)
-			if success, ok := options["success"].(bool); !ok || !success {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Failed to decrypt data. Check encryption keys.",
-				})
-				return
-			}
 
-			message, ok := options["message"].([]map[string]interface{})
-			if !ok {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid decrypted payload",
-				})
-				return
-			}
-
-			response := controllers.CountBulk(message)
+			response := controllers.CountBulk(body)
 			status := http.StatusInternalServerError
 			if success, ok := response["success"].(bool); ok && success {
 				status = http.StatusOK
@@ -654,26 +379,8 @@ func Router_mysql(router *gin.Engine) {
 				})
 				return
 			}
-			// Decrypt incoming data
-			options := helpers.Decript(body)
-			if success, ok := options["success"].(bool); !ok || !success {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Failed to decrypt data. Check encryption keys.",
-				})
-				return
-			}
 
-			message, ok := options["message"].(map[string]interface{})
-			if !ok {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid decrypted payload",
-				})
-				return
-			}
-
-			response := controllers.Query(message)
+			response := controllers.Query(body)
 			status := http.StatusInternalServerError
 			if success, ok := response["success"].(bool); ok && success {
 				status = http.StatusOK
@@ -690,26 +397,8 @@ func Router_mysql(router *gin.Engine) {
 				})
 				return
 			}
-			// Decrypt incoming data
-			options := helpers.Decript(body)
-			if success, ok := options["success"].(bool); !ok || !success {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Failed to decrypt data. Check encryption keys.",
-				})
-				return
-			}
 
-			message, ok := options["message"].(map[string]interface{})
-			if !ok {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid decrypted payload",
-				})
-				return
-			}
-
-			response := controllers.DatabaseHandler(message)
+			response := controllers.DatabaseHandler(body)
 			status := http.StatusInternalServerError
 			if success, ok := response["success"].(bool); ok && success {
 				status = http.StatusOK

@@ -54,7 +54,6 @@ var (
 	JwtKey                  string
 	EnableEncripted         bool
 	EncryptionKey           string
-	initializationVector    string
 	EncryptionAlgorithm     string
 	EncryptionInitializatin string
 	// encryptionKey and initializationVector are the binary forms used by crypto
