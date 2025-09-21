@@ -2,350 +2,258 @@ package route
 
 import (
 	"net/http"
-	"vartrick/controllers" // Assuming you'll have models for MySQL connection
+	"vartrick/controllers"
 	"vartrick/helpers"
 
 	"github.com/gin-gonic/gin"
 )
 
+// helper: decrypt and validate incoming payload
+func decryptAndValidate(c *gin.Context) (map[string]interface{}, bool) {
+	var body map[string]interface{}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, helpers.Encript(map[string]interface{}{
+			"success": false,
+			"message": "Invalid JSON body",
+		}))
+		return nil, false
+	}
+
+	decrypted := helpers.Decript(body)
+	if success, ok := decrypted["success"].(bool); !ok || !success {
+		c.JSON(http.StatusBadRequest, helpers.Encript(map[string]interface{}{
+			"success": false,
+			"message": "Failed to decrypt data. Check encryption keys.",
+		}))
+		return nil, false
+	}
+
+	message, ok := decrypted["message"].(map[string]interface{})
+	if !ok {
+		c.JSON(http.StatusBadRequest, helpers.Encript(map[string]interface{}{
+			"success": false,
+			"message": "Invalid decrypted payload",
+		}))
+		return nil, false
+	}
+
+	return message, true
+}
+
+// helper: determine HTTP status
+func determineStatus(response map[string]interface{}) int {
+	if success, ok := response["success"].(bool); ok && success {
+		return http.StatusOK
+	}
+	return http.StatusInternalServerError
+}
+
 func Router_mysql(router *gin.Engine) {
-	// Example of MySQL routes (commented for now)
-	mysql := router.Group("/api/v1")
+	mysql := router.Group("/api/V1")
 	{
-		// Base route for testing if the server is running
+		// Base route
 		mysql.GET("/", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
 				"success": true,
-				"message": "Backend Mysql Api application router is working",
+				"message": "Backend Mysql API router is working",
 			})
 		})
+
+		// LOGIN
 		mysql.POST("/login", func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, map[string]interface{}{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
+			message, ok := decryptAndValidate(c)
+			if !ok {
 				return
 			}
 
-			// Query the database for user
-			result := controllers.Read(options)
+			response := controllers.Read(message)
 
-			status := http.StatusInternalServerError
-			if success, ok := result["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
+			status := determineStatus(response)
 
-			// Check if user exists
-			if success, ok := result["success"].(bool); ok && success {
-				if messages, ok := result["message"].([]map[string]interface{}); ok && len(messages) > 0 {
-					// Gather client metadata
-					userBrowser := map[string]interface{}{
-						"ip_address":      helpers.ClearIPAddress(c.ClientIP()),
-						"host":            c.Request.Host,
-						"os":              c.Request.UserAgent(), // can parse more precisely with a library
-						"browser":         "",                    // optional: add browser parsing library if needed
-						"browser_version": "",
-					}
-					// Merge metadata into first user record
-					messages[0]["user_browser"] = userBrowser
-					// Generate JWT token for the user
-					authResult := helpers.Authenticate(map[string]interface{}{
-						"id":        messages[0]["id"],
-						"user_name": messages[0]["user_name"],
-					})
-					if successToken, ok := authResult["success"].(bool); ok && successToken {
-						// Attach token to user record
-						messages[0]["token"] = authResult["message"]
-					} else {
-						c.JSON(http.StatusInternalServerError, map[string]interface{}{
-							"success": false,
-							"message": "Failed to generate token",
-						})
-						return
-					}
-					result["message"] = messages
+			if messages, ok := response["message"].([]map[string]interface{}); ok && len(messages) > 0 {
+				user := messages[0]
+				user["user_browser"] = map[string]interface{}{
+					"ip_address":      c.ClientIP(),
+					"host":            c.Request.Host,
+					"os":              c.Request.UserAgent(),
+					"browser_version": c.Request.UserAgent(),
+					"browser_name":    c.Request.UserAgent(),
 				}
-			}
-			c.JSON(status, result)
-		})
-		mysql.POST("/read", helpers.AuthMiddleware(), func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
+
+				authResult := helpers.Authenticate(map[string]interface{}{
+					"id":        user["id"],
+					"user_name": user["user_name"],
 				})
-				return
+
+				if successToken, ok := authResult["success"].(bool); ok && successToken {
+					user["token"] = authResult["message"]
+				} else {
+					c.JSON(http.StatusInternalServerError, helpers.Encript(map[string]interface{}{
+						"success": false,
+						"message": "Failed to generate token",
+					}))
+					return
+				}
+
+				response["message"] = messages
 			}
-			response := controllers.Read(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
+
+			c.JSON(status, helpers.Encript(response))
 		})
-		mysql.POST("/joint-read", helpers.AuthMiddleware(), func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.ReadJoin(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-		mysql.POST("/read-bulk", helpers.AuthMiddleware(), func(c *gin.Context) {
-			var options []map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.ReadBulk(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-		mysql.POST("/list", helpers.AuthMiddleware(), func(c *gin.Context) {
-			//add encriptions from helpers
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.List(options)
-			// Encrypt response before sending
-			encryptedResponse := helpers.Encript(response)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, encryptedResponse)
-		})
-		mysql.POST("/list-all", helpers.AuthMiddleware(), func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.ListAll(options)
-			// Encrypt response before sending
-			encryptedResponse := helpers.Encript(response)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, encryptedResponse)
-		})
-		mysql.POST("/update", helpers.AuthMiddleware(), func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.Update(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-		mysql.POST("/update-bulk", helpers.AuthMiddleware(), func(c *gin.Context) {
-			var options []map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.UpdateBulk(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-		mysql.POST("/create", helpers.AuthMiddleware(), func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.Create(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-		mysql.POST("/create-bulk", helpers.AuthMiddleware(), func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.CreateBulk(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-		mysql.POST("/delete", helpers.AuthMiddleware(), func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.Delete(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-		mysql.POST("/delete-bulk", helpers.AuthMiddleware(), func(c *gin.Context) {
-			var options []map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.DelateBulk(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-		mysql.POST("/search", helpers.AuthMiddleware(), func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.Search(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-		mysql.POST("/search-between", helpers.AuthMiddleware(), func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.SearchBetween(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-		mysql.POST("/count", helpers.AuthMiddleware(), func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			response := controllers.Count(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
+
+		// SINGLE-OBJECT ROUTES
+		singleRoutes := map[string]func(map[string]interface{}) map[string]interface{}{
+			"/read":            controllers.Read,
+			"/joint-read":      controllers.ReadJoin,
+			"/list":            controllers.List,
+			"/list-all":        controllers.ListAll,
+			"/update":          controllers.Update,
+			"/create":          controllers.Create,
+			"/delete":          controllers.Delete,
+			"/search":          controllers.Search,
+			"/search-between":  controllers.SearchBetween,
+			"/query":           controllers.Query,
+			"/database-handle": controllers.DatabaseHandler,
+		}
+
+		for route, handler := range singleRoutes {
+			r := route
+			h := handler
+			mysql.POST(r, helpers.AuthMiddleware(), func(c *gin.Context) {
+				message, ok := decryptAndValidate(c)
+				if !ok {
+					return
+				}
+				response := h(message)
+				c.JSON(determineStatus(response), helpers.Encript(response))
+			})
+		}
+
+		// BULK ROUTES
+		bulkRoutes := map[string]func([]map[string]interface{}) map[string]interface{}{
+			"/read-bulk":   controllers.ReadBulk,
+			"/create-bulk": func(msgs []map[string]interface{}) map[string]interface{} { return controllers.CreateBulk(msgs[0]) }, // adjust if controller expects array
+			"/update-bulk": controllers.UpdateBulk,
+			"/delete-bulk": controllers.DelateBulk,
+			"/bulk-count":  controllers.CountBulk,
+		}
+
+		for route, handler := range bulkRoutes {
+			r := route
+			h := handler
+			mysql.POST(r, helpers.AuthMiddleware(), func(c *gin.Context) {
+				var body map[string]interface{}
+				if err := c.ShouldBindJSON(&body); err != nil {
+					c.JSON(http.StatusBadRequest, helpers.Encript(map[string]interface{}{
+						"success": false,
+						"message": "Invalid JSON body",
+					}))
+					return
+				}
+
+				options := helpers.Decript(body)
+				if success, ok := options["success"].(bool); !ok || !success {
+					c.JSON(http.StatusBadRequest, helpers.Encript(map[string]interface{}{
+						"success": false,
+						"message": "Failed to decrypt data. Check encryption keys.",
+					}))
+					return
+				}
+
+				messageRaw := options["message"]
+				var message []map[string]interface{}
+
+				switch v := messageRaw.(type) {
+				case []interface{}:
+					for _, item := range v {
+						if m, ok := item.(map[string]interface{}); ok {
+							message = append(message, m)
+						} else {
+							c.JSON(http.StatusBadRequest, helpers.Encript(map[string]interface{}{
+								"success": false,
+								"message": "Invalid array element type",
+							}))
+							return
+						}
+					}
+				case map[string]interface{}:
+					message = append(message, v)
+				default:
+					c.JSON(http.StatusBadRequest, helpers.Encript(map[string]interface{}{
+						"success": false,
+						"message": "Invalid decrypted payload type",
+					}))
+					return
+				}
+
+				response := h(message)
+				c.JSON(determineStatus(response), helpers.Encript(response))
+			})
+		}
+
+		// SINGLE ROUTE: BACKUP
 		mysql.POST("/backup", helpers.AuthMiddleware(), func(c *gin.Context) {
 			var options map[string]interface{}
 			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
+				c.JSON(http.StatusBadRequest, helpers.Encript(map[string]interface{}{
 					"success": false,
 					"message": "Invalid JSON body",
-				})
+				}))
 				return
 			}
 			response := controllers.Backup(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
+			c.JSON(determineStatus(response), helpers.Encript(response))
 		})
-		mysql.POST("/query", helpers.AuthMiddleware(), func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
+
+		// COUNT ROUTE: supports single and bulk
+		mysql.POST("/count", helpers.AuthMiddleware(), func(c *gin.Context) {
+			var body map[string]interface{}
+			if err := c.ShouldBindJSON(&body); err != nil {
+				c.JSON(http.StatusBadRequest, helpers.Encript(map[string]interface{}{
 					"success": false,
 					"message": "Invalid JSON body",
-				})
+				}))
 				return
 			}
-			response := controllers.Query(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			c.JSON(status, response)
-		})
-		mysql.POST("/database-handle", helpers.AuthMiddleware(), func(c *gin.Context) {
-			var options map[string]interface{}
-			if err := c.ShouldBindJSON(&options); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
+
+			options := helpers.Decript(body)
+			if success, ok := options["success"].(bool); !ok || !success {
+				c.JSON(http.StatusBadRequest, helpers.Encript(map[string]interface{}{
 					"success": false,
-					"message": "Invalid JSON body",
-				})
+					"message": "Failed to decrypt data. Check encryption keys.",
+				}))
 				return
 			}
-			response := controllers.DatabaseHandler(options)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
+
+			messageRaw := options["message"]
+			var response map[string]interface{}
+
+			switch v := messageRaw.(type) {
+			case map[string]interface{}:
+				response = controllers.Count(v)
+			case []interface{}:
+				var bulk []map[string]interface{}
+				for _, item := range v {
+					if m, ok := item.(map[string]interface{}); ok {
+						bulk = append(bulk, m)
+					} else {
+						c.JSON(http.StatusBadRequest, helpers.Encript(map[string]interface{}{
+							"success": false,
+							"message": "Invalid array element type",
+						}))
+						return
+					}
+				}
+				response = controllers.CountBulk(bulk)
+			default:
+				c.JSON(http.StatusBadRequest, helpers.Encript(map[string]interface{}{
+					"success": false,
+					"message": "Invalid decrypted payload type",
+				}))
+				return
 			}
-			c.JSON(status, response)
+
+			c.JSON(determineStatus(response), helpers.Encript(response))
 		})
 	}
 }

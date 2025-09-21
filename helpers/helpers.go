@@ -227,42 +227,50 @@ func StartServer(router *gin.Engine) map[string]interface{} {
 }
 
 // --- AES helpers ---
-// Encript encrypts the JSON inside data["message"]
+// Encript encrypts either a single JSON object or a JSON array in data["message"]
 func Encript(data map[string]interface{}) map[string]interface{} {
 	message, ok := data["message"]
 	if !ok {
 		return map[string]interface{}{
 			"success": false,
-			"message": "message field missing",
+			"message": "message field is required",
 		}
 	}
 
-	// Convert message to JSON string
-	jsonBytes, err := json.Marshal(message)
-	if err != nil {
+	var jsonBytes []byte
+	var err error
+
+	switch msg := message.(type) {
+	case map[string]interface{}, []interface{}:
+		// Convert single object or array to JSON
+		jsonBytes, err = json.Marshal(msg)
+		if err != nil {
+			return map[string]interface{}{
+				"success": false,
+				"message": "JSON marshal error: " + err.Error(),
+			}
+		}
+	default:
 		return map[string]interface{}{
 			"success": false,
-			"message": "JSON marshal error: " + err.Error(),
+			"message": "message must be a JSON object or array",
 		}
 	}
 
-	// If encryption is disabled, return JSON string
 	if !EnableEncripted {
-		//data["message"] = string(jsonBytes)
 		return data
 	}
-	// Ensure key and IV are present and valid
-	// Prepare binary key and IV used by crypto
+
+	// Prepare key and IV
 	if EncryptionKey != "" {
 		EncryptionKey_Byte = []byte(EncryptionKey)
-		// if key length is not 16/24/32, log a warning (must be one of these)
 		if !(len(EncryptionKey_Byte) == 16 || len(EncryptionKey_Byte) == 24 || len(EncryptionKey_Byte) == 32) {
 			LogJSON(false, fmt.Sprintf("Invalid EncryptionKey length (%d). AES requires 16, 24 or 32 bytes.", len(EncryptionKey_Byte)))
-			// You may choose to pad/truncate here — we prefer explicit error.
 		}
 	} else {
 		EncryptionKey_Byte = nil
 	}
+
 	if EncryptionKey_Byte == nil || !(len(EncryptionKey_Byte) == 16 || len(EncryptionKey_Byte) == 24 || len(EncryptionKey_Byte) == 32) {
 		return map[string]interface{}{
 			"success": false,
@@ -270,7 +278,6 @@ func Encript(data map[string]interface{}) map[string]interface{} {
 		}
 	}
 
-	//find initializationVector_Byte
 	initializationVector_Byte = []byte(EncryptionInitializatin)
 	if initializationVector_Byte == nil || len(initializationVector_Byte) != aes.BlockSize {
 		return map[string]interface{}{
@@ -300,56 +307,42 @@ func Encript(data map[string]interface{}) map[string]interface{} {
 	encoded := base64.StdEncoding.EncodeToString(ciphertext)
 
 	return map[string]interface{}{
-		"success": data["success"],
-		"message": encoded,
+		"encrypted": encoded,
 	}
 }
 
-// Decript decrypts the JSON inside data["message"]
+// Decript decrypts either a single JSON object or a JSON array from data["encrypted"]
 func Decript(data map[string]interface{}) map[string]interface{} {
-	messageStr, ok := data["message"].(string)
+	encrypted, ok := data["encrypted"].(string)
 	if !ok {
 		return map[string]interface{}{
 			"success": false,
-			"message": "message field must be a string",
+			"message": "encrypted field must be a string",
 		}
 	}
 
 	if !EnableEncripted {
-		// If encryption disabled, attempt to parse message as JSON string into object
-		var original interface{}
-		if err := json.Unmarshal([]byte(messageStr), &original); err != nil {
-			// not JSON, just return the raw string
-			return data
-		}
-		data["message"] = original
 		return data
 	}
-	// Prepare binary key and IV used by crypto
+
+	// Prepare key and IV
 	if EncryptionKey != "" {
 		EncryptionKey_Byte = []byte(EncryptionKey)
-		// if key length is not 16/24/32, log a warning (must be one of these)
 		if !(len(EncryptionKey_Byte) == 16 || len(EncryptionKey_Byte) == 24 || len(EncryptionKey_Byte) == 32) {
 			LogJSON(false, fmt.Sprintf("Invalid EncryptionKey length (%d). AES requires 16, 24 or 32 bytes.", len(EncryptionKey_Byte)))
-			// You may choose to pad/truncate here — we prefer explicit error.
 		}
 	} else {
 		EncryptionKey_Byte = nil
 	}
+
 	if EncryptionKey_Byte == nil || !(len(EncryptionKey_Byte) == 16 || len(EncryptionKey_Byte) == 24 || len(EncryptionKey_Byte) == 32) {
 		return map[string]interface{}{
 			"success": false,
 			"message": "invalid encryption key configuration",
 		}
 	}
-	//find initializationVector_Byte
-	initializationVector_Byte = []byte(initializationVector)
-	if initializationVector_Byte == nil || len(initializationVector_Byte) != aes.BlockSize {
-		return map[string]interface{}{
-			"success": false,
-			"message": "invalid initialization vector (IV) configuration",
-		}
-	}
+
+	initializationVector_Byte = []byte(EncryptionInitializatin)
 	if initializationVector_Byte == nil || len(initializationVector_Byte) != aes.BlockSize {
 		return map[string]interface{}{
 			"success": false,
@@ -357,7 +350,7 @@ func Decript(data map[string]interface{}) map[string]interface{} {
 		}
 	}
 
-	cipherBytes, err := base64.StdEncoding.DecodeString(messageStr)
+	cipherBytes, err := base64.StdEncoding.DecodeString(encrypted)
 	if err != nil {
 		return map[string]interface{}{
 			"success": false,
@@ -410,7 +403,7 @@ func Decript(data map[string]interface{}) map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"success": data["success"],
+		"success": true,
 		"message": original,
 	}
 }
@@ -646,12 +639,13 @@ func GenerateLike(like map[string]interface{}) (string, []interface{}) {
 	return strings.Join(conditions, " AND "), params
 }
 
-// UpdateSet builds `SET field1=?, field2=?`
+// UpdateSet builds on create data`SET field1=?, field2=?`
 func GenerateSet(set map[string]interface{}) (string, []interface{}) {
 	var parts []string
 	var params []interface{}
-	for key := range set {
+	for key, val := range set {
 		parts = append(parts, fmt.Sprintf("%s = ?", EscapeId(key)))
+		params = append(params, val)
 	}
 	return strings.Join(parts, ", "), params
 }

@@ -478,7 +478,6 @@ func Count(options map[string]interface{}) map[string]interface{} {
 	}
 }
 
-// CountBulk runs multiple count queries
 func CountBulk(options []map[string]interface{}) map[string]interface{} {
 	if len(options) == 0 {
 		return map[string]interface{}{
@@ -487,47 +486,58 @@ func CountBulk(options []map[string]interface{}) map[string]interface{} {
 		}
 	}
 
-	results := []map[string]interface{}{}
+	responce := []map[string]interface{}{}
+	topSuccess := true
 
 	for _, opt := range options {
 		table, ok1 := opt["table"].(string)
 		condition, ok2 := opt["condition"].(map[string]interface{})
 
 		if !ok1 || table == "" || !ok2 || len(condition) == 0 {
-			results = append(results, map[string]interface{}{
+			responce = append(responce, map[string]interface{}{
 				"table":   table,
 				"success": false,
 				"count":   0,
 				"message": "Table name and condition required",
 			})
+			topSuccess = false
 			continue
 		}
 
-		res := Count(map[string]interface{}{
+		result := Count(map[string]interface{}{
 			"table":     table,
 			"condition": condition,
 		})
 
-		if res["success"].(bool) {
-			results = append(results, map[string]interface{}{
-				"table":   table,
-				"success": true,
-				"count":   res["message"],
-				"message": "Count retrieved",
-			})
+		success, _ := result["success"].(bool)
+
+		var countVal int
+		if success {
+			switch v := result["message"].(type) {
+			case int:
+				countVal = v
+			case int64:
+				countVal = int(v)
+			case float64:
+				countVal = int(v)
+			default:
+				countVal = 0
+			}
 		} else {
-			results = append(results, map[string]interface{}{
-				"table":   table,
-				"success": false,
-				"count":   0,
-				"message": res["message"],
-			})
+			topSuccess = false
 		}
+
+		responce = append(responce, map[string]interface{}{
+			"table":   table,
+			"success": success,
+			"count":   countVal,
+			"message": result["message"],
+		})
 	}
 
 	return map[string]interface{}{
-		"success": true,
-		"message": results,
+		"success": topSuccess,
+		"message": responce,
 	}
 }
 
@@ -949,7 +959,6 @@ func Create(options map[string]interface{}) map[string]interface{} {
 			"message": "Table name is required",
 		}
 	}
-
 	// Validate data
 	dataRaw, ok := options["data"]
 	if !ok {
@@ -969,10 +978,12 @@ func Create(options map[string]interface{}) map[string]interface{} {
 	// Build SET clause
 	setClause, params := helpers.GenerateSet(data)
 	query := fmt.Sprintf("INSERT INTO %s SET %s", table, setClause)
-
+	//fmt.Println(query)
+	//fmt.Println(params)
 	// Execute query
 	result, err := db.Exec(query, params...)
 	if err != nil {
+		fmt.Println(err.Error())
 		return map[string]interface{}{
 			"success": false,
 			"message": err.Error(),
@@ -990,7 +1001,7 @@ func Create(options map[string]interface{}) map[string]interface{} {
 
 	// Add id to the original data map
 	data["id"] = lastID
-
+	fmt.Println(result)
 	return map[string]interface{}{
 		"success": true,
 		"message": map[string]interface{}{

@@ -10,6 +10,7 @@ import (
 	"vartrick/route"
 
 	"github.com/fatih/color"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
@@ -73,7 +74,14 @@ func main() {
 	// Gin setup
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
-
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"http://localhost:3000"}, // your React URL
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
 	router.GET("/favicon.ico", func(c *gin.Context) {
 		c.Status(204) // No Content
 	})
@@ -102,7 +110,7 @@ func main() {
 	helpers.StartCleanup(10 * time.Minute)
 
 	// Rate limiter
-	router.Use(helpers.RateLimitMiddleware(2, 3, 10*time.Second, "/api/", "/api/V1/"))
+	router.Use(helpers.RateLimitMiddleware(2, 10, 10*time.Second, "/api/", "/api/V1/"))
 
 	// Load app routes
 	route.Router_main(router)
