@@ -3,9 +3,7 @@ package controllers
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -20,61 +18,114 @@ func SetDB(database *sql.DB) {
 
 // Backup runs mysqldump and returns the result as JSON-compatible map
 func Backup(options map[string]interface{}) map[string]interface{} {
-	email, emailOk := options["email"].(string)
-	if !emailOk || email == "" {
+	email, ok := options["email"].(string)
+	if !ok || email == "" {
 		return map[string]interface{}{
 			"success": false,
 			"message": "Email is required and must be a string.",
 		}
 	}
+
 	now := time.Now()
-	fileName := fmt.Sprintf("mysql_backup_%d.sql", now.Unix())
+	file_name := fmt.Sprintf("mysql_backup_%d.sql", now.Unix())
 	publicDir := filepath.Join(".", "public")
 	if err := os.MkdirAll(publicDir, 0755); err != nil {
-		log.Println("Failed to create public dir:", err)
 		return map[string]interface{}{
 			"success": false,
-			"message": err.Error(),
+			"message": "Failed to create public dir: " + err.Error(),
 		}
 	}
-	filePath := filepath.Join(publicDir, fileName)
-	/*if helpers.DatabasePassword == "" {
-		log.Println("MYSQL_PASSWORD not set in environment or helpers")
-		return map[string]interface{}{
-			"success": false,
-			"message": "MySQL password not configured.",
-		}
-	}*/
-	//cmd := exec.Command("mysqldump", "-h", helpers.DatabaseHost, "-u", helpers.DatabaseUser, "-p"+helpers.DatabasePassword, helpers.DatabaseName)
-	cmd := exec.Command("mysqldump",
-		"-h", helpers.DatabaseHost,
-		"-u", helpers.DatabaseUser,
-		"-p"+helpers.DatabasePassword,
-		helpers.DatabaseName,
-	)
-	outfile, err := os.Create(filePath)
-	if err != nil {
-		log.Println("Failed to create dump file:", err)
-		return map[string]interface{}{
-			"success": false,
-			"message": err.Error(),
-		}
-	}
-	defer outfile.Close()
+	file_path := filepath.Join(publicDir, file_name)
 
-	cmd.Stdout = outfile
-	if err := cmd.Run(); err != nil {
-		log.Println("mysqldump failed:", err)
+	file, err := os.Create(file_path)
+	if err != nil {
 		return map[string]interface{}{
 			"success": false,
-			"message": err.Error(),
+			"message": "Failed to create backup file: " + err.Error(),
 		}
 	}
-	// Send backup via email
+	defer file.Close()
+
+	// 1. Get all tables
+	query := fmt.Sprintf("SELECT table_name FROM information_schema.tables WHERE table_schema='%s'", helpers.DatabaseName)
+	rows, err := db.Query(query)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "Failed to list tables: " + err.Error(),
+		}
+	}
+	defer rows.Close()
+
+	var tables []string
+	for rows.Next() {
+		var table string
+		if err := rows.Scan(&table); err != nil {
+			return map[string]interface{}{
+				"success": false,
+				"message": "Failed to get tables: " + err.Error(),
+			}
+		}
+		tables = append(tables, table)
+	}
+
+	// 2. Iterate over each table: dump structure + data
+	for _, table := range tables {
+		// Table structure
+		var tName, createStmt string
+		err := db.QueryRow(fmt.Sprintf("SHOW CREATE TABLE `%s`", table)).Scan(&tName, &createStmt)
+		if err != nil {
+			return map[string]interface{}{
+				"success": false,
+				"message": fmt.Sprintf("Failed to get CREATE TABLE for %s: %s", table, err.Error()),
+			}
+		}
+		file.WriteString(fmt.Sprintf("-- Table structure for `%s`\n", table))
+		file.WriteString(fmt.Sprintf("%s;\n\n", createStmt))
+
+		// Table data
+		dataRows, err := db.Query(fmt.Sprintf("SELECT * FROM `%s`", table))
+		if err != nil {
+			return map[string]interface{}{
+				"success": false,
+				"message": fmt.Sprintf("Failed to select data from %s: %s", table, err.Error()),
+			}
+		}
+		cols, _ := dataRows.Columns()
+		values := make([]interface{}, len(cols))
+		valuePtrs := make([]interface{}, len(cols))
+
+		for dataRows.Next() {
+			for i := range cols {
+				valuePtrs[i] = &values[i]
+			}
+			dataRows.Scan(valuePtrs...)
+
+			valStrings := make([]string, len(cols))
+			for i, val := range values {
+				if val == nil {
+					valStrings[i] = "NULL"
+				} else {
+					valStrings[i] = fmt.Sprintf("'%v'", val)
+				}
+			}
+
+			insertStmt := fmt.Sprintf("INSERT INTO `%s` (%s) VALUES (%s);\n",
+				table,
+				strings.Join(cols, ", "),
+				strings.Join(valStrings, ", "),
+			)
+			file.WriteString(insertStmt)
+		}
+		dataRows.Close()
+		file.WriteString("\n")
+	}
+
+	// 3. Send backup via email
 	response := SendMail(map[string]interface{}{
 		"to":          email,
-		"message":     "Email for backup database",
-		"Attachments": filePath,
+		"message":     "Database backup attached",
+		"Attachments": file_path,
 	})
 	if success, ok := response["success"].(bool); !ok || !success {
 		return map[string]interface{}{
@@ -85,13 +136,13 @@ func Backup(options map[string]interface{}) map[string]interface{} {
 			},
 		}
 	}
-	// Optional: Cleanup old backups older than 7 days
-	//helpers.CleanupOldBackups(publicDir, 7*24*time.Hour)
+
 	return map[string]interface{}{
 		"success": true,
 		"message": map[string]interface{}{
 			"status": "Backup created and sent successfully to " + email,
 			"error":  "",
+			"path":   file_path,
 		},
 	}
 }
