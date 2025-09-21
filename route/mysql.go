@@ -11,7 +11,7 @@ import (
 
 func Router_mysql(router *gin.Engine) {
 	// Example of MySQL routes (commented for now)
-	mysql := router.Group("/api/V1")
+	mysql := router.Group("/api/v1")
 	{
 		// Base route for testing if the server is running
 		mysql.GET("/", func(c *gin.Context) {
