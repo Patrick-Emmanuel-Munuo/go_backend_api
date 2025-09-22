@@ -1108,6 +1108,7 @@ func Update(options map[string]interface{}) map[string]interface{} {
 			"message": "Table name is required",
 		}
 	}
+
 	// Extract and validate data
 	dataRaw, ok := options["data"]
 	if !ok {
@@ -1123,6 +1124,7 @@ func Update(options map[string]interface{}) map[string]interface{} {
 			"message": "Invalid data format",
 		}
 	}
+
 	// Extract and validate condition
 	condRaw, ok := options["condition"]
 	if !ok {
@@ -1138,31 +1140,58 @@ func Update(options map[string]interface{}) map[string]interface{} {
 			"message": "Invalid condition format",
 		}
 	}
-	// Build SET clause and WHERE clause
-	setClause, setparams := helpers.GenerateSet(data)
+
+	// Build SET and WHERE clause
+	setClause, setParams := helpers.GenerateSet(data)
 	whereClause, whereParams := helpers.GenerateWhere(condition)
-	// Build parameters in correct order: data values first, then condition values
-	var params []interface{}
-	params = append(params, whereParams...)
-	params = append(params, setparams...)
-	// Construct final SQL query
+
+	// Correct order: set params first, then where params
+	params := append(setParams, whereParams...)
+
+	// Build query
 	query := fmt.Sprintf("UPDATE %s SET %s WHERE %s", table, setClause, whereClause)
-	// Execute query
+
+	// Execute
+	// Execute
 	result, err := db.Exec(query, params...)
 	if err != nil {
+		if mysqlErr, ok := err.(*mysql.MySQLError); ok {
+			switch mysqlErr.Number {
+			case 1062: // duplicate key
+				return map[string]interface{}{
+					"success": false,
+					"message": "Duplicate entry. A record with the same unique key already exists",
+				}
+			case 1452: // foreign key error
+				return map[string]interface{}{
+					"success": false,
+					"message": "Referenced foreign key does not exist in parent table",
+				}
+			default:
+				return map[string]interface{}{
+					"success": false,
+					"message": mysqlErr.Message,
+				}
+			}
+		}
 		return map[string]interface{}{
 			"success": false,
-			"message": err.Error()}
+			"message": "Error occurred while updating data",
+		}
 	}
+
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected > 0 {
 		return map[string]interface{}{
 			"success": true,
-			"message": "Data updated successfully", "rows_affected": rowsAffected}
+			"message": fmt.Sprintf("%d row(s) updated successfully", rowsAffected),
+		}
 	}
+
 	return map[string]interface{}{
 		"success": false,
-		"message": "No data was updated. Condition may not match or data is unchanged"}
+		"message": "No data was updated. Condition may not match or data is unchanged",
+	}
 }
 
 // UpdateBulk updates multiple records in a single query
