@@ -14,7 +14,8 @@ func sendResponse(c *gin.Context, response map[string]interface{}) {
 	if success, ok := response["success"].(bool); ok && success {
 		status = http.StatusOK
 	}
-	c.JSON(status, helpers.Encript(response))
+	c.JSON(status, response)
+	//c.JSON(status, helpers.Encript(response))
 }
 
 // Generic binder + handler
@@ -47,19 +48,20 @@ func handleLogin(c *gin.Context) {
 		return
 	}
 
-	decrypted := helpers.Decript(options)
-	if success, ok := decrypted["success"].(bool); !ok || !success {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Failed to decrypt data. Check encryption keys."})
-		return
-	}
+	/*
+		decrypted := helpers.Decript(options)
+		if success, ok := decrypted["success"].(bool); !ok || !success {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Failed to decrypt data. Check encryption keys."})
+			return
+		}
 
-	message, ok := decrypted["message"].(map[string]interface{})
-	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid decrypted payload"})
-		return
-	}
+		message, ok := decrypted["message"].(map[string]interface{})
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid decrypted payload"})
+			return
+		}*/
 
-	response := controllers.Read(message)
+	response := controllers.Read(options)
 
 	// Attach metadata and generate JWT if user found
 	if messages, ok := response["message"].([]map[string]interface{}); ok && len(messages) > 0 {

@@ -1,99 +1,70 @@
-Go Backend API Documentation
+# Go Backend API Template
 
-Project: Go Backend API Template
-Framework: Gin Web Framework
+**Description:**  
+This is a basic **Go (Golang)** application built using the **Gin** web framework. It serves as a backend API template suitable for building and deploying services. It supports simple CRUD operations and provides a foundation for further extensions.
 
-Author: Vartrick98
-Language: Go (Golang)
+---
 
-Description:
-This is a backend API template built with Go and Gin. It supports CRUD operations, bulk operations, authentication, and data encryption. It serves as a foundation for building scalable Go-based APIs.
+## Development
 
-Table of Contents
+### Run Go in Development Mode (with live reload)
 
-Development Setup
+You can use **nodemon** to automatically restart your Go server during development:
 
-Build & Production
-
-API Base URL
-
-Endpoints
-
-/create
-
-/bulk-create
-
-/read
-
-/bulk-read
-
-/update
-
-/bulk-update
-
-/delete
-
-/bulk-delete
-
-/search
-
-/search-between
-
-/count
-
-/count-bulk
-
-/backup
-
-/query
-
-/database-handle
-
-Development Setup
-Run Go in Development Mode
+```bash
 # Install nodemon globally
 npm install -g nodemon
 
 # Run the Go server with live reload
 nodemon --exec "go run main.go"
 
-Build Go Server
-# Compile main.go
+Build the Go Server
+
+To compile your Go application:
+# Build the main.go file
 go build main.go
 
 Build for Production
-# Initialize Go modules
+For production deployment:
+
+# Clean dependencies and build with optimizations
+# Initialize Go modules (if not already initialized)
 go mod init go_backend_api
 
-# Download dependencies
+# Tidy and download all dependencies
 go mod tidy
-
-# Build optimized binary
 go build -tags netgo -ldflags "-s -w" -o app.exe
 
 
-Flags Explanation:
 
--tags netgo → Forces Go to use net package implementation
-
--ldflags "-s -w" → Removes debug info to reduce binary size
+Flags explanation:
+-tags netgo → Forces the use of the Go net package implementation.
+-ldflags '-s -w' → Strips debug information to reduce binary size.
 
 Prerequisites
-
+Ensure the following software is installed:
 Go 1.18+
-
 Git
-
 Gin Framework
 
-Clone Repository
+Clone the Repository
+# Clone the repository
 git clone https://github.com/vartrick98/go_backend_api.git
+
+# Navigate into the project folder
 cd go_backend_api
 
-API Base URL
-http://localhost:PORT/api/v1
+start.bat ```
 
-Endpoints
+
+
+
+
+## Go Backend API Documentation
+# API Base URL 
+http://serverurl:port/api/v1
+
+# Endpoints
 1. /create
 
 POST: Create a single record
