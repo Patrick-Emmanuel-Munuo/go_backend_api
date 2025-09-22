@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 	"vartrick/helpers"
+
+	"github.com/go-sql-driver/mysql"
 )
 
 var db *sql.DB
@@ -445,6 +447,7 @@ func Count(options map[string]interface{}) map[string]interface{} {
 	if !ok || table == "" {
 		return map[string]interface{}{
 			"success": false,
+			"name":    table,
 			"message": "Table name is required",
 		}
 	}
@@ -454,6 +457,7 @@ func Count(options map[string]interface{}) map[string]interface{} {
 	if !ok || len(condition) == 0 {
 		return map[string]interface{}{
 			"success": false,
+			"name":    table,
 			"message": "At least one condition or or_condition is required",
 		}
 	}
@@ -470,76 +474,66 @@ func Count(options map[string]interface{}) map[string]interface{} {
 	if err != nil {
 		return map[string]interface{}{
 			"success": false,
+			"name":    table,
 			"message": err.Error(),
 		}
 	}
 
 	return map[string]interface{}{
 		"success": true,
+		"name":    table,
 		"message": total,
 	}
 }
 
 func CountBulk(options []map[string]interface{}) map[string]interface{} {
+	counted := []map[string]interface{}{}
+	failed := []map[string]interface{}{}
+
+	if options == nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "function options parameter required can't be empty",
+		}
+	}
+
 	if len(options) == 0 {
 		return map[string]interface{}{
 			"success": false,
-			"message": "Options must be a non-empty array",
+			"message": "body can't be empty",
 		}
 	}
-
-	responce := []map[string]interface{}{}
-	topSuccess := true
 
 	for _, opt := range options {
-		table, ok1 := opt["table"].(string)
-		condition, ok2 := opt["condition"].(map[string]interface{})
-
-		if !ok1 || table == "" || !ok2 || len(condition) == 0 {
-			responce = append(responce, map[string]interface{}{
-				"table":   table,
-				"success": false,
-				"count":   0,
-				"message": "Table name and condition required",
-			})
-			topSuccess = false
-			continue
-		}
-
-		result := Count(map[string]interface{}{
-			"table":     table,
-			"condition": condition,
-		})
-
-		success, _ := result["success"].(bool)
-
-		var countVal int
-		if success {
-			switch v := result["message"].(type) {
-			case int:
-				countVal = v
-			case int64:
-				countVal = int(v)
-			case float64:
-				countVal = int(v)
-			default:
-				countVal = 0
-			}
+		result := Count(opt)
+		if success, ok := result["success"].(bool); ok && success {
+			counted = append(counted, result)
 		} else {
-			topSuccess = false
+			failed = append(failed, result)
 		}
-
-		responce = append(responce, map[string]interface{}{
-			"table":   table,
-			"success": success,
-			"count":   countVal,
-			"message": result["message"],
-		})
 	}
 
-	return map[string]interface{}{
-		"success": topSuccess,
-		"message": responce,
+	switch {
+	case len(failed) == 0 && len(counted) > 0:
+		return map[string]interface{}{
+			"success": true,
+			"message": append(failed, counted...),
+		}
+	case len(failed) > 0 && len(counted) == 0:
+		return map[string]interface{}{
+			"success": false,
+			"message": append(failed, counted...),
+		}
+	case len(failed) > 0 && len(counted) > 0:
+		return map[string]interface{}{
+			"success": true,
+			"message": append(failed, counted...),
+		}
+	default:
+		return map[string]interface{}{
+			"success": false,
+			"message": "data not found",
+		}
 	}
 }
 
@@ -598,32 +592,53 @@ func Search(options map[string]interface{}) map[string]interface{} {
 		}
 	}
 	defer rows.Close()
-
-	results := []map[string]interface{}{}
-	cols, _ := rows.Columns()
-	for rows.Next() {
-		// make slice for Scan
-		vals := make([]interface{}, len(cols))
-		valPtrs := make([]interface{}, len(cols))
-		for i := range vals {
-			valPtrs[i] = &vals[i]
+	columns, err := rows.Columns()
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": err.Error(),
 		}
-		rows.Scan(valPtrs...)
+	}
+	var results []map[string]interface{}
+	for rows.Next() {
+		columnValues := make([]interface{}, len(columns))
+		columnPointers := make([]interface{}, len(columns))
+		for i := range columnValues {
 
-		rowMap := map[string]interface{}{}
-		for i, col := range cols {
-			rowMap[col] = vals[i]
+			columnPointers[i] = &columnValues[i]
+		}
+		if err := rows.Scan(columnPointers...); err != nil {
+			return map[string]interface{}{
+				"success": false,
+				"message": err.Error(),
+			}
+		}
+		rowMap := make(map[string]interface{})
+		for i, col := range columns {
+			val := columnPointers[i].(*interface{})
+			rowMap[col] = *val
 		}
 		results = append(results, rowMap)
 	}
-
+	// Convert []uint8 (MySQL bytes) to string for JSON compatibility
+	for i, row := range results {
+		newRow := make(map[string]interface{})
+		for k, v := range row {
+			if byteVal, ok := v.([]uint8); ok {
+				newRow[k] = string(byteVal)
+			} else {
+				newRow[k] = v
+			}
+		}
+		results[i] = newRow
+	}
 	if len(results) == 0 {
 		return map[string]interface{}{
 			"success": false,
-			"message": "No matching data found.",
+			"message": "No data found",
 		}
 	}
-
+	//if result contain password password delete it
 	return map[string]interface{}{
 		"success": true,
 		"message": results,
@@ -980,37 +995,53 @@ func Create(options map[string]interface{}) map[string]interface{} {
 	// Build SET clause
 	setClause, params := helpers.GenerateSet(data)
 	query := fmt.Sprintf("INSERT INTO %s SET %s", table, setClause)
-	//fmt.Println(query)
-	//fmt.Println(params)
+
 	// Execute query
 	result, err := db.Exec(query, params...)
 	if err != nil {
-		fmt.Println(err.Error())
+		if mysqlErr, ok := err.(*mysql.MySQLError); ok {
+			switch mysqlErr.Number {
+			case 1062: // duplicate key
+				return map[string]interface{}{
+					"success": false,
+					"message": "Duplicate entry. A record with the same key already exists",
+				}
+			case 1452: // foreign key error
+				return map[string]interface{}{
+					"success": false,
+					"message": "Referenced foreign key does not exist in parent table",
+				}
+			default:
+				return map[string]interface{}{
+					"success": false,
+					"message": mysqlErr.Message,
+				}
+			}
+		}
 		return map[string]interface{}{
 			"success": false,
-			"message": err.Error(),
+			"message": "Error occur Unable to create data",
 		}
 	}
 
-	// Get last insert ID
-	lastID, err := result.LastInsertId()
-	if err != nil {
-		return map[string]interface{}{
-			"success": false,
-			"message": err.Error(),
+	// Handle last insert ID
+	if id, err := result.LastInsertId(); err == nil && id > 0 {
+		// Table has AUTO_INCREMENT primary key
+		data["id"] = id
+	} else {
+		// Table has no AUTO_INCREMENT
+		if _, exists := data["id"]; !exists {
+			data["id"] = nil
 		}
 	}
 
-	// Add id to the original data map
-	data["id"] = lastID
-	fmt.Println(result)
 	return map[string]interface{}{
 		"success": true,
 		"message": map[string]interface{}{
-			"id":   lastID,
 			"data": data,
 		},
 	}
+
 }
 
 // CreateBulk inserts multiple records in a single query
