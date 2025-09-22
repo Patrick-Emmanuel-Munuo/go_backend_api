@@ -1,62 +1,266 @@
-# Go Backend API Template
+Go Backend API Documentation
 
-**Description:**  
-This is a basic **Go (Golang)** application built using the **Gin** web framework. It serves as a backend API template suitable for building and deploying services. It supports simple CRUD operations and provides a foundation for further extensions.
+Project: Go Backend API Template
+Framework: Gin Web Framework
 
----
+Author: Vartrick98
+Language: Go (Golang)
 
-## Development
+Description:
+This is a backend API template built with Go and Gin. It supports CRUD operations, bulk operations, authentication, and data encryption. It serves as a foundation for building scalable Go-based APIs.
 
-### Run Go in Development Mode (with live reload)
+Table of Contents
 
-You can use **nodemon** to automatically restart your Go server during development:
+Development Setup
 
-```bash
+Build & Production
+
+API Base URL
+
+Endpoints
+
+/create
+
+/bulk-create
+
+/read
+
+/bulk-read
+
+/update
+
+/bulk-update
+
+/delete
+
+/bulk-delete
+
+/search
+
+/search-between
+
+/count
+
+/count-bulk
+
+/backup
+
+/query
+
+/database-handle
+
+Development Setup
+Run Go in Development Mode
 # Install nodemon globally
 npm install -g nodemon
 
 # Run the Go server with live reload
 nodemon --exec "go run main.go"
 
-Build the Go Server
-
-To compile your Go application:
-# Build the main.go file
+Build Go Server
+# Compile main.go
 go build main.go
 
 Build for Production
-For production deployment:
-
-# Clean dependencies and build with optimizations
-# Initialize Go modules (if not already initialized)
+# Initialize Go modules
 go mod init go_backend_api
 
-# Tidy and download all dependencies
+# Download dependencies
 go mod tidy
+
+# Build optimized binary
 go build -tags netgo -ldflags "-s -w" -o app.exe
 
 
+Flags Explanation:
 
-Flags explanation:
--tags netgo → Forces the use of the Go net package implementation.
--ldflags '-s -w' → Strips debug information to reduce binary size.
+-tags netgo → Forces Go to use net package implementation
+
+-ldflags "-s -w" → Removes debug info to reduce binary size
 
 Prerequisites
-Ensure the following software is installed:
+
 Go 1.18+
+
 Git
+
 Gin Framework
 
-Clone the Repository
-# Clone the repository
+Clone Repository
 git clone https://github.com/vartrick98/go_backend_api.git
-
-# Navigate into the project folder
 cd go_backend_api
 
-start.bat
+API Base URL
+http://localhost:PORT/api/v1
+
+Endpoints
+1. /create
+
+POST: Create a single record
+
+Request JSON:
+
+{
+    "table": "test",
+    "data": {
+        "name": "nodejs",
+        "password": "vsvgdjdjdgdndeueoeddbd66h",
+        "user_name": "VariTrick98"
+    }
+}
 
 
+Response JSON:
+
+{
+    "success": true,
+    "message": {
+        "id": 5,
+        "name": "nodejs",
+        "password": "vsvgdjdjdgdndeueoeddbd66h",
+        "user_name": "VariTrick98"
+    }
+}
+
+2. /bulk-create
+
+POST: Create multiple records in one request
+
+Request JSON:
+
+[
+    {
+        "table":"test",
+        "data":{
+            "name":"nodejs",
+            "password":"vsvgdjdjdgdndeueoeddbd66h",
+            "user_name":"VariTrick98"
+        }
+    },
+    {
+        "table":"test",
+        "data":{
+            "name":"mysql",
+            "password":"vsvgdjdjdgdndeueoeddbd66h",
+            "user_name":"VariTrick1988"
+        }
+    }
+]
 
 
-NSSM for Robust Service
+Response JSON:
+
+{
+    "success": true,
+    "message": [
+        {
+            "success": true,
+            "message": {
+                "id": 7,
+                "name": "nodejs"
+            }
+        },
+        {
+            "success": true,
+            "message": {
+                "id": 8,
+                "name": "mysql"
+            }
+        }
+    ]
+}
+
+3. /read
+
+POST: Read a single record
+
+Request JSON:
+
+{
+    "table": "test",
+    "condition": { "name": "nodejs" }
+}
+
+
+Response JSON:
+
+{
+    "success": true,
+    "message": {
+        "id": 5,
+        "name": "nodejs",
+        "password": "vsvgdjdjdgdndeueoeddbd66h"
+    }
+}
+
+4. /bulk-read
+
+POST: Read multiple records
+
+Request JSON:
+
+[
+    { "table": "test", "condition": { "name": "nodejs" } },
+    { "table": "test", "condition": { "name": "mysql" } }
+]
+
+
+Response JSON:
+
+{
+    "success": true,
+    "message": [
+        { "success": true, "message": { "id": 5, "name": "nodejs" } },
+        { "success": true, "message": { "id": 6, "name": "mysql" } }
+    ]
+}
+
+5. /update
+
+POST: Update a record
+
+Request JSON:
+
+{
+    "table": "test",
+    "data": { "password": "newpassword123" },
+    "condition": { "name": "nodejs" }
+}
+
+
+Response JSON:
+
+{
+    "success": true,
+    "message": { "affectedRows": 1 }
+}
+
+6. /bulk-update
+
+POST: Update multiple records
+
+Request JSON:
+
+[
+    {
+        "table": "test",
+        "data": { "password": "pass1" },
+        "condition": { "name": "nodejs" }
+    },
+    {
+        "table": "test",
+        "data": { "password": "pass2" },
+        "condition": { "name": "mysql" }
+    }
+]
+
+
+Response JSON:
+
+{
+    "success": true,
+    "message": [
+        { "success": true, "message": { "affectedRows": 1 } },
+        { "success": true, "message": { "affectedRows": 1 } }
+    ]
+}
