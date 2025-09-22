@@ -1012,83 +1012,57 @@ func Create(options map[string]interface{}) map[string]interface{} {
 }
 
 // CreateBulk inserts multiple records in a single query
-func CreateBulk(options map[string]interface{}) map[string]interface{} {
-	dataCreate := []map[string]interface{}{}
-	errorCreate := []map[string]interface{}{}
+func CreateBulk(options []map[string]interface{}) map[string]interface{} {
+	created := []map[string]interface{}{}
+	failed := []map[string]interface{}{}
 
 	// Validate options
-	dataRaw, dataExists := options["data"]
-	tableRaw, tableExists := options["table"]
-
-	if !dataExists || !tableExists {
+	if options == nil {
 		return map[string]interface{}{
 			"success": false,
-			"message": "Missing required fields: data and table",
+			"message": "function options parameter required can't be empty",
 		}
 	}
 
-	dataSlice, ok := dataRaw.([]interface{})
-	table, ok2 := tableRaw.(string)
-	if !ok || !ok2 || len(table) == 0 {
+	if len(options) == 0 {
 		return map[string]interface{}{
 			"success": false,
-			"message": "Invalid data or table format",
+			"message": "body can't be empty",
 		}
 	}
 
-	if len(dataSlice) == 0 {
-		return map[string]interface{}{
-			"success": false,
-			"message": "Body can't be empty",
-		}
-	}
-
-	// Loop through each data item and call Create
-	for _, item := range dataSlice {
-		dataMap, ok := item.(map[string]interface{})
-		if !ok {
-			errorCreate = append(errorCreate, map[string]interface{}{
-				"success": false,
-				"message": "Invalid data item format",
-			})
-			continue
-		}
-
-		result := Create(map[string]interface{}{
-			"table": table,
-			"data":  dataMap,
-		})
-
+	for _, opt := range options {
+		result := Create(opt)
 		if success, ok := result["success"].(bool); ok && success {
-			dataCreate = append(dataCreate, result)
+			created = append(created, result)
 		} else {
-			errorCreate = append(errorCreate, result)
+			failed = append(failed, result)
 		}
 	}
 
-	// Build response
 	switch {
-	case len(errorCreate) == 0 && len(dataCreate) > 0:
+	case len(failed) == 0 && len(created) > 0:
 		return map[string]interface{}{
 			"success": true,
-			"message": dataCreate,
+			"message": append(failed, created...),
 		}
-	case len(errorCreate) > 0 && len(dataCreate) == 0:
+	case len(failed) > 0 && len(created) == 0:
 		return map[string]interface{}{
 			"success": false,
-			"message": errorCreate,
+			"message": append(failed, created...),
 		}
-	case len(errorCreate) > 0 && len(dataCreate) > 0:
+	case len(failed) > 0 && len(created) > 0:
 		return map[string]interface{}{
-			"success": false,
-			"message": append(errorCreate, dataCreate...),
+			"success": true,
+			"message": append(failed, created...),
 		}
 	default:
 		return map[string]interface{}{
 			"success": false,
-			"message": "Data not found",
+			"message": "data not found",
 		}
 	}
+
 }
 
 // update mysql
@@ -1280,12 +1254,12 @@ func DelateBulk(options []map[string]interface{}) map[string]interface{} {
 	case len(failed) == 0 && len(deleted) > 0:
 		return map[string]interface{}{
 			"success": true,
-			"message": deleted,
+			"message": append(failed, deleted...),
 		}
 	case len(failed) > 0 && len(deleted) == 0:
 		return map[string]interface{}{
 			"success": false,
-			"message": failed,
+			"message": append(failed, deleted...),
 		}
 	case len(failed) > 0 && len(deleted) > 0:
 		return map[string]interface{}{

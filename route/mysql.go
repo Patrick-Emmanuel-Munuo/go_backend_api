@@ -1,14 +1,150 @@
 package route
 
 import (
-	"fmt"
 	"net/http"
-	"vartrick/controllers" // Assuming you'll have models for MySQL connection
+	"vartrick/controllers"
 	"vartrick/helpers"
 
 	"github.com/gin-gonic/gin"
 )
 
+// Generic response handler
+func sendResponse(c *gin.Context, response map[string]interface{}) {
+	status := http.StatusInternalServerError
+	if success, ok := response["success"].(bool); ok && success {
+		status = http.StatusOK
+	}
+	c.JSON(status, helpers.Encript(response))
+}
+
+// Generic binder + handler
+func bindAndHandle(c *gin.Context, handler func(map[string]interface{}) map[string]interface{}) {
+	var body map[string]interface{}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid JSON body"})
+		return
+	}
+	response := handler(body)
+	sendResponse(c, response)
+}
+
+// Generic binder + handler for bulk requests
+func bindAndHandleBulk(c *gin.Context, handler func([]map[string]interface{}) map[string]interface{}) {
+	var body []map[string]interface{}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid JSON body"})
+		return
+	}
+	response := handler(body)
+	sendResponse(c, response)
+}
+
+// Login handler (special case)
+func handleLogin(c *gin.Context) {
+	var options map[string]interface{}
+	if err := c.ShouldBindJSON(&options); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid JSON body"})
+		return
+	}
+
+	decrypted := helpers.Decript(options)
+	if success, ok := decrypted["success"].(bool); !ok || !success {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Failed to decrypt data. Check encryption keys."})
+		return
+	}
+
+	message, ok := decrypted["message"].(map[string]interface{})
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid decrypted payload"})
+		return
+	}
+
+	response := controllers.Read(message)
+
+	// Attach metadata and generate JWT if user found
+	if messages, ok := response["message"].([]map[string]interface{}); ok && len(messages) > 0 {
+		user := messages[0]
+		user["user_browser"] = map[string]interface{}{
+			"ip_address": c.ClientIP(),
+			"host":       c.Request.Host,
+			"os":         c.Request.UserAgent(),
+		}
+
+		authResult := helpers.Authenticate(map[string]interface{}{
+			"id":        user["id"],
+			"user_name": user["user_name"],
+		})
+		if successToken, ok := authResult["success"].(bool); ok && successToken {
+			user["token"] = authResult["message"]
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "Failed to generate token"})
+			return
+		}
+
+		response["message"] = messages
+	}
+
+	sendResponse(c, response)
+}
+
+func Router_mysql(router *gin.Engine) {
+	mysql := router.Group("/api/v1")
+	{
+		// Base route
+		mysql.GET("/", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{"success": true, "message": "Backend Mysql Api application router is working"})
+		})
+
+		// Login
+		mysql.POST("/login", handleLogin)
+
+		// Single item routes
+		singleRoutes := []struct {
+			route   string
+			handler func(map[string]interface{}) map[string]interface{}
+		}{
+			{"read", controllers.Read},
+			{"joint-read", controllers.ReadJoin},
+			{"list", controllers.List},
+			{"list-all", controllers.ListAll},
+			{"update", controllers.Update},
+			{"create", controllers.Create},
+			{"delete", controllers.Delete},
+			{"search", controllers.Search},
+			{"search-between", controllers.SearchBetween},
+			{"count", controllers.Count},
+			{"backup", controllers.Backup},
+			{"query", controllers.Query},
+			{"database-handle", controllers.DatabaseHandler},
+		}
+		for _, r := range singleRoutes {
+			route := r
+			mysql.POST("/"+route.route, helpers.AuthMiddleware(), func(c *gin.Context) {
+				bindAndHandle(c, route.handler)
+			})
+		}
+
+		// Bulk routes
+		bulkRoutes := []struct {
+			route   string
+			handler func([]map[string]interface{}) map[string]interface{}
+		}{
+			{"read-bulk", controllers.ReadBulk},
+			{"update-bulk", controllers.UpdateBulk},
+			{"create-bulk", controllers.CreateBulk},
+			{"delete-bulk", controllers.DelateBulk},
+			{"count-bulk", controllers.CountBulk},
+		}
+		for _, r := range bulkRoutes {
+			route := r
+			mysql.POST("/"+route.route, helpers.AuthMiddleware(), func(c *gin.Context) {
+				bindAndHandleBulk(c, route.handler)
+			})
+		}
+	}
+}
+
+/*
 func Router_mysql(router *gin.Engine) {
 	// Example of MySQL routes (commented for now)
 	mysql := router.Group("/api/v1")
@@ -86,25 +222,9 @@ func Router_mysql(router *gin.Engine) {
 			// Encrypt the response if encryption is enabled
 			c.JSON(status, helpers.Encript(response))
 		})
-
-		mysql.POST("/read", helpers.AuthMiddleware(), func(c *gin.Context) {
-			var body map[string]interface{}
-			if err := c.ShouldBindJSON(&body); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"success": false,
-					"message": "Invalid JSON body",
-				})
-				return
-			}
-			// Query user from database
-			response := controllers.Read(body)
-			status := http.StatusInternalServerError
-			if success, ok := response["success"].(bool); ok && success {
-				status = http.StatusOK
-			}
-			// Encrypt the response if encryption is enabled
-			c.JSON(status, response)
-		})
+			mysql.POST("/read", helpers.AuthMiddleware(), func(c *gin.Context) {
+    bindAndHandle(c, controllers.Read)
+})
 		mysql.POST("/joint-read", helpers.AuthMiddleware(), func(c *gin.Context) {
 			var body map[string]interface{}
 			if err := c.ShouldBindJSON(&body); err != nil {
@@ -408,3 +528,32 @@ func Router_mysql(router *gin.Engine) {
 		})
 	}
 }
+
+func sendResponse(c *gin.Context, response map[string]interface{}) {
+	status := http.StatusInternalServerError
+	if success, ok := response["success"].(bool); ok && success {
+		status = http.StatusOK
+	}
+	c.JSON(status, helpers.Encript(response))
+}
+
+func bindAndHandle(c *gin.Context, handler func(map[string]interface{}) map[string]interface{}) {
+	var body map[string]interface{}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid JSON body"})
+		return
+	}
+
+	response := handler(body)
+	status := http.StatusInternalServerError
+	if success, ok := response["success"].(bool); ok && success {
+		status = http.StatusOK
+	}
+	c.JSON(status, helpers.Encript(response))
+}
+
+mysql.POST("/read", helpers.AuthMiddleware(), func(c *gin.Context) {
+    bindAndHandle(c, controllers.Read)
+})
+
+*/
