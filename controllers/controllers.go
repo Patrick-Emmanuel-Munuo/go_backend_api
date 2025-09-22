@@ -221,6 +221,7 @@ func Read(options map[string]interface{}) map[string]interface{} {
 		columnValues := make([]interface{}, len(columns))
 		columnPointers := make([]interface{}, len(columns))
 		for i := range columnValues {
+
 			columnPointers[i] = &columnValues[i]
 		}
 		if err := rows.Scan(columnPointers...); err != nil {
@@ -254,6 +255,7 @@ func Read(options map[string]interface{}) map[string]interface{} {
 			"message": "No data found",
 		}
 	}
+	//if result contain password password delete it
 	return map[string]interface{}{
 		"success": true,
 		"message": results,
@@ -452,7 +454,7 @@ func Count(options map[string]interface{}) map[string]interface{} {
 	if !ok || len(condition) == 0 {
 		return map[string]interface{}{
 			"success": false,
-			"message": "Condition is required",
+			"message": "At least one condition or or_condition is required",
 		}
 	}
 
