@@ -62,8 +62,8 @@ func Router_main(router *gin.Engine) {
 				"message": message,
 			})
 		})
-		//this router encript -token
-		routes.GET("/encript-token", helpers.AuthMiddleware(), func(c *gin.Context) {
+		//this router encript -token , helpers.AuthMiddleware()
+		routes.GET("/encript-token", func(c *gin.Context) {
 			amount := c.Query("amount")
 			result := controllers.EncriptToken(map[string]interface{}{
 				"amount": amount,
@@ -74,8 +74,8 @@ func Router_main(router *gin.Engine) {
 				c.JSON(http.StatusInternalServerError, result)
 			}
 		})
-		// This route decript-token
-		routes.GET("/decript-token", helpers.AuthMiddleware(), func(c *gin.Context) {
+		// This route decript-token helpers.AuthMiddleware()
+		routes.GET("/decript-token", func(c *gin.Context) {
 			token := c.Query("token")
 			result := controllers.DecriptToken(map[string]interface{}{
 				"token": token,

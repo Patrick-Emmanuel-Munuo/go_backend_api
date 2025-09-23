@@ -165,103 +165,20 @@ func Read(options map[string]interface{}) map[string]interface{} {
 		selectFields = helpers.GenerateSelect(select_data)
 	}
 	// Parse "condition" and "or_condition"
-	condition := make(map[string]interface{})
-	orCondition := make(map[string]interface{})
-	if cond, ok := options["condition"].(map[string]interface{}); ok {
-		condition = cond
-	}
-	if orCond, ok := options["or_condition"].(map[string]interface{}); ok {
-		orCondition = orCond
-	}
-
-	if len(condition) == 0 && len(orCondition) == 0 {
+	condMap, _ := options["condition"].(map[string]interface{})
+	orCondMap, _ := options["or_condition"].(map[string]interface{})
+	whereClause, params, err := helpers.BuildWhere(condMap, orCondMap)
+	// Build and execute whereClause
+	if err != nil {
 		return map[string]interface{}{
 			"success": false,
-			"message": "Missing condition(s)",
+			"message": err.Error(),
 		}
 	}
 
-	// Build WHERE clause
-	// Build WHERE clause
-	var whereClause string
-	var params []interface{}
-
-	switch {
-	case len(condition) > 0 && len(orCondition) > 0:
-		where1, params1 := helpers.GenerateWhere(condition)
-		where2, params2 := helpers.GenerateWhereOr(orCondition)
-		whereClause = fmt.Sprintf("( %s ) AND ( %s )", where1, where2)
-		params = append(params, params1...)
-		params = append(params, params2...)
-	case len(condition) > 0:
-		whereClause, params = helpers.GenerateWhere(condition)
-	case len(orCondition) > 0:
-		whereClause, params = helpers.GenerateWhereOr(orCondition)
-	default:
-		whereClause = "1=1" // fallback: no condition, selects all
-	}
-
-	// Build and execute query
 	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s", selectFields, table, whereClause)
-	rows, err := db.Query(query, params...)
-	if err != nil {
-		return map[string]interface{}{
-			"success": false,
-			"message": err.Error(),
-		}
-	}
-	defer rows.Close()
-	columns, err := rows.Columns()
-	if err != nil {
-		return map[string]interface{}{
-			"success": false,
-			"message": err.Error(),
-		}
-	}
-	var results []map[string]interface{}
-	for rows.Next() {
-		columnValues := make([]interface{}, len(columns))
-		columnPointers := make([]interface{}, len(columns))
-		for i := range columnValues {
+	return helpers.ExecuteSelect(query, params...)
 
-			columnPointers[i] = &columnValues[i]
-		}
-		if err := rows.Scan(columnPointers...); err != nil {
-			return map[string]interface{}{
-				"success": false,
-				"message": err.Error(),
-			}
-		}
-		rowMap := make(map[string]interface{})
-		for i, col := range columns {
-			val := columnPointers[i].(*interface{})
-			rowMap[col] = *val
-		}
-		results = append(results, rowMap)
-	}
-	// Convert []uint8 (MySQL bytes) to string for JSON compatibility
-	for i, row := range results {
-		newRow := make(map[string]interface{})
-		for k, v := range row {
-			if byteVal, ok := v.([]uint8); ok {
-				newRow[k] = string(byteVal)
-			} else {
-				newRow[k] = v
-			}
-		}
-		results[i] = newRow
-	}
-	if len(results) == 0 {
-		return map[string]interface{}{
-			"success": false,
-			"message": "No data found",
-		}
-	}
-	//if result contain password password delete it
-	return map[string]interface{}{
-		"success": true,
-		"message": results,
-	}
 }
 
 // generate table relationship use mulitiple tables keys for table joining

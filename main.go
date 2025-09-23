@@ -92,7 +92,7 @@ func main() {
 	// Initialize DB
 	dbResult := helpers.InitDBConnection()
 	if dbResult["success"].(bool) {
-		controllers.SetDB(helpers.DB)
+		controllers.SetDB(helpers.DB) // now helpers.db is live
 		helpers.LogJSON(true, "Database connected successfully")
 	} else {
 		helpers.LogJSON(false, fmt.Sprintf("Database connection failed: %s", dbResult["message"]))
