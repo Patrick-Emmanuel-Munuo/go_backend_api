@@ -52,7 +52,7 @@ func GenerateWhere(cond map[string]interface{}) (string, []interface{}) {
 	var parts []string
 	var params []interface{}
 	for k, v := range cond {
-		parts = append(parts, fmt.Sprintf("%s = ?", EscapeId(k)))
+		parts = append(parts, fmt.Sprintf("BINARY %s = ?", EscapeId(k)))
 		params = append(params, v)
 	}
 	return strings.Join(parts, " AND "), params
@@ -63,7 +63,7 @@ func GenerateWhereOr(cond map[string]interface{}) (string, []interface{}) {
 	var parts []string
 	var params []interface{}
 	for k, v := range cond {
-		parts = append(parts, fmt.Sprintf("%s = ?", EscapeId(k)))
+		parts = append(parts, fmt.Sprintf("BINARY %s = ?", EscapeId(k)))
 		params = append(params, v)
 	}
 	return strings.Join(parts, " OR "), params
@@ -74,7 +74,7 @@ func GenerateLike(like map[string]interface{}) (string, []interface{}) {
 	var conditions []string
 	var params []interface{}
 	for key, val := range like {
-		conditions = append(conditions, fmt.Sprintf("%s LIKE ?", EscapeId(key)))
+		conditions = append(conditions, fmt.Sprintf("BINARY %s LIKE ?", EscapeId(key)))
 		params = append(params, fmt.Sprintf("%%%v%%", val))
 	}
 	return strings.Join(conditions, " AND "), params

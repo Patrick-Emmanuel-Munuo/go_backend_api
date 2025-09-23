@@ -177,6 +177,8 @@ func Read(options map[string]interface{}) map[string]interface{} {
 	}
 
 	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s", selectFields, table, whereClause)
+	fmt.Println(query)
+	fmt.Println(params)
 	return helpers.ExecuteSelect(query, params...)
 
 }
